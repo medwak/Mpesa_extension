@@ -309,6 +309,16 @@ function bindImport() {
     importResult($('#sms-result'), stats, failed);
     $('#sms-input').value = '';
   });
+  $('#sms-paste').addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) return toast('The clipboard is empty');
+      const box = $('#sms-input');
+      box.value = box.value.trim() ? `${box.value.trim()}\n\n${text}` : text;
+    } catch {
+      toast('Clipboard access was blocked. Long-press the box and choose Paste instead.');
+    }
+  });
   $('#sms-clear').addEventListener('click', () => { $('#sms-input').value = ''; $('#sms-result').innerHTML = ''; });
 
   let pendingPdf = null;
@@ -658,9 +668,62 @@ async function init() {
     });
   }
 
-  let start = new URLSearchParams(location.search).get('tab');
+  if (!isExtension) setUpWebApp();
+
+  const params = new URLSearchParams(location.search);
+  if (await importShared(params)) return;
+  let start = params.get('tab');
   try { start ||= sessionStorage.getItem('tab'); } catch {}
   showTab(start || 'overview');
+}
+
+const isExtension = typeof chrome !== 'undefined' && Boolean(chrome.runtime?.id);
+
+// Text shared from the phone's Messages app arrives as ?text=... (Web Share Target).
+async function importShared(params) {
+  const shared = ['title', 'text', 'url'].map((k) => params.get(k) || '').filter(Boolean).join('\n');
+  if (!shared) return false;
+  history.replaceState(null, '', location.pathname);
+  const { transactions, failed } = parseMessages(shared);
+  showTab('import');
+  if (!transactions.length) {
+    $('#sms-input').value = shared;
+    $('#sms-result').innerHTML = alertHtml([{ level: 'warning', title: 'Nothing imported', text: 'The shared text did not contain an M-Pesa confirmation message. It is shown in the box above.' }]);
+    return true;
+  }
+  const stats = addTransactions(state, transactions);
+  await persist();
+  importResult($('#sms-result'), stats, failed);
+  toast(stats.added ? `Imported ${stats.added} M-Pesa transaction(s)` : 'Already imported');
+  return true;
+}
+
+// Installable web app: offline cache, install button, durable storage and
+// keeping several open windows in sync.
+function setUpWebApp() {
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    navigator.serviceWorker.register(new URL('../../sw.js', import.meta.url), { scope: new URL('../../', import.meta.url).pathname }).catch(() => {});
+  }
+  navigator.storage?.persist?.().catch(() => {});
+  let deferred = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    $('#install-app').hidden = false;
+  });
+  $('#install-app').addEventListener('click', async () => {
+    if (!deferred) return;
+    deferred.prompt();
+    await deferred.userChoice;
+    deferred = null;
+    $('#install-app').hidden = true;
+  });
+  window.addEventListener('storage', async (e) => {
+    if (e.key === 'mpesaLedger') {
+      state = await loadState();
+      render();
+    }
+  });
 }
 
 init();

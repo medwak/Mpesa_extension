@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>M-Pesa Ledger</title>
+  <meta name="theme-color" content="#0d8a3a">
+  <link rel="manifest" href="../../manifest.webmanifest">
+  <link rel="icon" href="../../icons/icon192.png">
+  <link rel="apple-touch-icon" href="../../icons/icon192.png">
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="dashboard.css">
 </head>
@@ -98,6 +102,7 @@
           <textarea id="sms-input" rows="12" placeholder="TJ51ABCD01 Confirmed.You have received Ksh1,000.00 from …"></textarea>
           <div class="row">
             <button class="primary" id="sms-import">Import messages</button>
+            <button id="sms-paste">Paste from clipboard</button>
             <button id="sms-clear">Clear</button>
           </div>
           <div id="sms-result"></div>
@@ -115,6 +120,7 @@
           <h3>Ways to get your M-Pesa data in</h3>
           <ul class="help">
             <li><strong>From your phone:</strong> open the M-PESA thread in Messages, select the messages, copy them and send them to yourself (email, WhatsApp Web, notes). Then paste them here.</li>
+            <li><strong>On your phone (app version):</strong> in Messages, long-press an M-Pesa SMS (or select several), tap <em>Share</em> and pick <em>M-Pesa Ledger</em>. It is imported straight away.</li>
             <li><strong>Messages for Web:</strong> open your SMS on the computer (for example Google Messages for web), highlight M-Pesa messages, right-click and choose <em>Import selection into M-Pesa Ledger</em>.</li>
             <li><strong>Full statement:</strong> request one in the M-PESA app (Statements) or with <code>*334#</code> → My Account → M-PESA Statement. Safaricom emails a password-protected PDF. Upload that PDF here and type the password from the SMS.</li>
           </ul>
@@ -213,6 +219,7 @@
           <button id="backup-export">Download backup (JSON)</button>
           <label class="button">Restore backup <input id="backup-import" type="file" accept=".json,application/json" hidden></label>
           <button id="tx-export">Export transactions (CSV)</button>
+          <button id="install-app" class="primary" hidden>Install app on this device</button>
           <button id="load-demo">Load demo data</button>
           <button id="wipe" class="danger">Delete all data</button>
         </div>

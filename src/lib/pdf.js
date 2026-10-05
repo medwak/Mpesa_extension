@@ -103,6 +103,7 @@ export function linesToRows(lines) {
   let anchors = null;
   let last = null;
   const cols = {};
+  let lastPage = 0;
   for (const raw of lines) {
     const line = { ...raw, items: splitWords(raw.items) };
     const text = lineText(line.items);
@@ -133,6 +134,7 @@ export function linesToRows(lines) {
       const details = m[3].replace(STATUS_RE, '').trim();
       const amt = assignAmounts(nums, anchors);
       last = [m[1], m[2], details, statusMatch ? statusMatch[1] : 'Completed', amt.paidIn, amt.withdrawn, amt.balance];
+      lastPage = line.page;
       rows.push(last);
       continue;
     }
@@ -145,6 +147,16 @@ export function linesToRows(lines) {
       const inDetails = (i) => (detailsX == null || i.x >= detailsX - 4) && (statusX == null || i.x < statusX - 4);
       const before = words.filter((i) => detailsX != null && i.x < detailsX - 4);
       const t = lineText(before).match(/^(\d{1,2}:\d{2}(?::\d{2})?)$/);
+      // Text in the left columns that is not a wrapped time (a disclaimer,
+      // a footer) means the table has ended.
+      if (before.length && !t) {
+        last = null;
+        continue;
+      }
+      if (line.page !== lastPage) {
+        last = null;
+        continue;
+      }
       if (t && !/\d:\d/.test(last[1])) last[1] = `${last[1]} ${t[1]}`;
       const rest = lineText(words.filter(inDetails)).replace(STATUS_RE, '');
       if (rest) last[2] = `${last[2]} ${rest}`.trim();

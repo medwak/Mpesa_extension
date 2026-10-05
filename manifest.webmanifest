@@ -1,0 +1,22 @@
+{
+  "name": "M-Pesa Ledger",
+  "short_name": "M-Pesa Ledger",
+  "description": "Accounting, statements and budgets from your M-Pesa messages. Data stays on your phone.",
+  "id": "./",
+  "start_url": "./src/ui/dashboard.html?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7f5",
+  "theme_color": "#0d8a3a",
+  "icons": [
+    { "src": "icons/icon192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "./src/ui/dashboard.html",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

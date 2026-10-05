@@ -24,8 +24,9 @@ test('rebuilds statement rows from positioned PDF text', () => {
     item('TJ61ABCDEF', 40, 650), item('2026-10-02', 110, 650), item('Pay Bill to 888880 - KPLC PREPAID', 200, 650), item('Completed', 370, 650),
     item('-500.00', 518, 650, 30), item('2,950.00', 570, 650, 35),
     item('09:00:00', 110, 640), item('Acc. 5432', 200, 640),
+    item('Disclaimer: this statement is produced for your information', 40, 620),
+    item('only.', 200, 610),
     item('Page 1 of 2', 280, 40),
-    item('Disclaimer: this statement is for information only', 40, 30),
     ...header(780, 2),
     item('TJ60ABCDEF', 40, 765, 45, 2), item('2026-10-01 09:00:00', 110, 765, 60, 2), item('Funds received from - 0712****678 ACME LIMITED', 200, 765, 160, 2),
     item('Completed', 370, 765, 40, 2), item('3,450.00', 446, 765, 34, 2), item('3,450.00', 570, 765, 35, 2),
@@ -33,6 +34,7 @@ test('rebuilds statement rows from positioned PDF text', () => {
   const rows = linesToRows(groupLines(items));
   assert.equal(rows.length, 5);
   assert.deepEqual(rows[2], ['TJ62ABCDEF', '2026-10-03 08:00:00', 'Customer Transfer to - 0722****111 JANE WANJIKU', 'Completed', '', '-1,000.00', '1,950.00']);
+  // The wrapped disclaimer word "only." must not be glued onto the last row.
   assert.deepEqual(rows[3].slice(0, 3), ['TJ61ABCDEF', '2026-10-02 09:00:00', 'Pay Bill to 888880 - KPLC PREPAID Acc. 5432']);
   assert.equal(rows[4][4], '3,450.00');
 
