@@ -4,7 +4,7 @@
 
 import { parseAmount, toPlain } from './money.js';
 
-export function parseCsv(text) {
+export function parseCsv(text, delimiter = ',') {
   const rows = [];
   let row = [];
   let field = '';
@@ -19,7 +19,7 @@ export function parseCsv(text) {
       } else if (c === '"') quoted = false;
       else field += c;
     } else if (c === '"') quoted = true;
-    else if (c === ',') {
+    else if (c === delimiter) {
       row.push(field);
       field = '';
     } else if (c === '\n' || c === '\r') {
@@ -110,100 +110,234 @@ function counterpartyFrom(details) {
   return { counterparty: name, phone, account: (m[2] || '').trim() };
 }
 
-function normDate(s) {
-  const t = s.trim();
-  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
-  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
-  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}T${m[4].padStart(2, '0')}:${m[5]}`;
-  m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) return `${t}T00:00`;
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+
+function isoFrom(y, mo, d, h = 0, mi = 0, ap = '') {
+  let year = Number(y);
+  if (year < 100) year += 2000;
+  let month = Number(mo);
+  let day = Number(d);
+  // Kenyan files are day-first; swap only when that is impossible.
+  if (month > 12 && day <= 12) [month, day] = [day, month];
+  if (!month || month > 12 || !day || day > 31) return null;
+  let hour = Number(h);
+  if (/pm/i.test(ap) && hour < 12) hour += 12;
+  if (/am/i.test(ap) && hour === 12) hour = 0;
+  const pad = (v) => String(v).padStart(2, '0');
+  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(mi)}`;
+}
+
+export function normDate(s) {
+  const t = String(s || '').trim();
+  const time = '(?:[ T,]+(\\d{1,2}):(\\d{2})(?::\\d{2})?\\s*(AM|PM)?)?';
+  let m = t.match(new RegExp(`^(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})${time}`, 'i'));
+  if (m) return isoFrom(m[1], m[2], m[3], m[4], m[5], m[6]);
+  m = t.match(new RegExp(`^(\\d{1,2})[-/.](\\d{1,2})[-/.](\\d{2,4})${time}`, 'i'));
+  if (m) return isoFrom(m[3], m[2], m[1], m[4], m[5], m[6]);
+  m = t.match(new RegExp(`^(\\d{1,2})[- ]([A-Za-z]{3})[A-Za-z]*[- ,]+(\\d{2,4})${time}`, 'i'));
+  if (m && MONTHS[m[2].toLowerCase()]) return isoFrom(m[3], MONTHS[m[2].toLowerCase()], m[1], m[4], m[5], m[6]);
   return null;
 }
 
-export function importCsv(text) {
-  const rows = parseCsv(text);
-  if (!rows.length) return { transactions: [], failed: [] };
-  const headerIdx = rows.findIndex((r) => r.map(normHeader).some((h) => h === 'receiptno' || h === 'id' || h === 'code'));
-  if (headerIdx < 0) throw new Error('Unrecognised CSV: expected a "Receipt No." or "id" column');
-  const header = rows[headerIdx].map(normHeader);
-  const col = (name) => header.indexOf(name);
-  const body = rows.slice(headerIdx + 1);
-  const failed = [];
+// Header names seen in Safaricom statements and in the CSVs that PDF/Excel
+// converters produce from them, normalised to lowercase letters only.
+const HEADER_SYNONYMS = {
+  code: ['receiptno', 'receiptnumber', 'receipt', 'transactionid', 'transactionno', 'transactionnumber', 'transactioncode', 'transactionref', 'mpesacode', 'mpesaref', 'mpesareceipt', 'reference', 'referenceno', 'refno', 'ref', 'code', 'id'],
+  time: ['completiontime', 'completiondate', 'completedtime', 'completedon', 'date', 'time', 'datetime', 'dateandtime', 'transactiondate', 'transactiontime', 'transactiondatetime', 'initiationtime', 'valuedate'],
+  details: ['details', 'detail', 'description', 'narration', 'narrative', 'particulars', 'transactiondetails', 'transactiontype', 'otherparty', 'remarks'],
+  status: ['transactionstatus', 'status'],
+  paidIn: ['paidin', 'moneyin', 'credit', 'credits', 'cr', 'in', 'deposit', 'deposits', 'amountin', 'receivedamount', 'received'],
+  withdrawn: ['withdrawn', 'withdrawal', 'withdrawals', 'paidout', 'moneyout', 'debit', 'debits', 'dr', 'out', 'amountout', 'spent'],
+  amount: ['amount', 'transactionamount', 'amountksh', 'amountkes'],
+  balance: ['balance', 'runningbalance', 'accountbalance', 'balanceksh', 'balancekes', 'newbalance'],
+};
+const FIELD_OF = new Map(Object.entries(HEADER_SYNONYMS).flatMap(([f, names]) => names.map((n) => [n, f])));
+const CODE_CELL_RE = /^[A-Z0-9]{10}$/;
 
-  // Own export format.
-  if (col('direction') >= 0 && col('amount') >= 0) {
-    const transactions = [];
-    for (const r of body) {
-      const get = (k) => (col(k) >= 0 ? (r[col(k)] || '').trim() : '');
-      const date = normDate(get('date'));
-      const amount = parseAmount(get('amount'));
-      if (!date || !amount) {
-        failed.push(r.join(','));
-        continue;
-      }
-      transactions.push({
-        id: get('id') || get('code'),
-        code: get('code'),
-        date,
-        type: get('type') || 'manual',
-        direction: get('direction') === 'in' ? 'in' : 'out',
-        amount,
-        fee: parseAmount(get('fee')) || 0,
-        counterparty: get('counterparty'),
-        phone: get('phone'),
-        account: get('account'),
-        balance: parseAmount(get('balance')),
-        category: get('category') || undefined,
-        note: get('note'),
-        source: 'csv',
-      });
+function mapHeader(cells) {
+  const map = {};
+  cells.forEach((c, i) => {
+    const f = FIELD_OF.get(normHeader(c));
+    if (f && map[f] == null) map[f] = i;
+  });
+  return map;
+}
+
+function usableMap(m) {
+  return m.time != null && (m.paidIn != null || m.withdrawn != null || m.amount != null) && (m.code != null || m.details != null);
+}
+
+// Finds the header row. Converters often break a header over two lines
+// ("Receipt" / "No."), so each row is also tried merged with the next one.
+function findHeader(rows) {
+  for (let i = 0; i < Math.min(rows.length, 80); i++) {
+    const single = mapHeader(rows[i]);
+    if (usableMap(single)) return { index: i, size: 1, map: single };
+    if (rows[i + 1]) {
+      const width = Math.max(rows[i].length, rows[i + 1].length);
+      const merged = Array.from({ length: width }, (_, k) => `${rows[i][k] || ''} ${rows[i + 1][k] || ''}`);
+      const m = mapHeader(merged);
+      if (usableMap(m)) return { index: i, size: 2, map: m };
     }
-    return { transactions, failed };
   }
+  return null;
+}
 
-  // Safaricom statement format: charges are separate rows sharing the receipt
-  // number of the transaction they belong to, so fold them into its fee.
-  const iCode = col('receiptno');
-  const iTime = col('completiontime');
-  const iDetails = col('details');
-  const iStatus = col('transactionstatus');
-  const iIn = col('paidin');
-  const iOut = col('withdrawn');
-  const iBal = col('balance');
-  if ([iCode, iTime, iDetails].some((i) => i < 0)) throw new Error('CSV is missing Receipt No., Completion Time or Details columns');
+// No header at all: find a row with an M-Pesa receipt code followed by a date
+// and assume the Safaricom column order from there.
+function guessHeaderless(rows) {
+  for (const r of rows) {
+    const c = r.findIndex((v) => CODE_CELL_RE.test((v || '').trim()));
+    if (c < 0 || !normDate(r[c + 1])) continue;
+    const hasStatus = /^(completed|failed|pending|cancelled)$/i.test((r[c + 3] || '').trim());
+    const base = hasStatus ? c + 4 : c + 3;
+    return { index: -1, size: 0, map: { code: c, time: c + 1, details: c + 2, status: hasStatus ? c + 3 : undefined, paidIn: base, withdrawn: base + 1, balance: base + 2 } };
+  }
+  return null;
+}
 
-  const byCode = new Map();
-  const charges = [];
+export function detectDelimiter(text) {
+  const lines = String(text).split(/\r?\n/).filter((l) => l.trim()).slice(0, 30);
+  let best = ',';
+  let bestCount = 0;
+  for (const d of [',', ';', '\t', '|']) {
+    const count = lines.reduce((s, l) => s + l.replace(/"[^"]*"/g, '').split(d).length - 1, 0);
+    if (count > bestCount) [best, bestCount] = [d, count];
+  }
+  return best;
+}
+
+function sniffWrongFile(text) {
+  const head = String(text).slice(0, 8);
+  if (head.startsWith('%PDF')) return 'This is a PDF, not a CSV. Open the PDF statement, export or copy its table to Excel/Google Sheets, then save it as CSV (File → Save as / Download → .csv).';
+  if (head.startsWith('PK')) return 'This looks like an Excel (.xlsx) file. In Excel choose File → Save As → "CSV (Comma delimited)", or in Google Sheets File → Download → CSV, then upload that file.';
+  if (/[\u0000-\u0008]/.test(String(text).slice(0, 2000))) return 'This file is not a text CSV. Save it as CSV and try again.';
+  return null;
+}
+
+function importOwnFormat(body, map) {
+  const failed = [];
+  const transactions = [];
   for (const r of body) {
-    const code = (r[iCode] || '').trim();
-    const details = (r[iDetails] || '').trim();
-    const status = iStatus >= 0 ? (r[iStatus] || '').trim().toLowerCase() : 'completed';
-    if (status && status !== 'completed') continue;
-    const date = normDate(r[iTime] || '');
-    const paidIn = Math.abs(parseAmount(iIn >= 0 ? r[iIn] : '') || 0);
-    const paidOut = Math.abs(parseAmount(iOut >= 0 ? r[iOut] : '') || 0);
-    if (!code || !date || (!paidIn && !paidOut)) {
-      if (code || details) failed.push(r.join(','));
+    const get = (k) => (map[k] != null ? (r[map[k]] || '').trim() : '');
+    const date = normDate(get('date'));
+    const amount = parseAmount(get('amount'));
+    if (!date || !amount) {
+      failed.push(r.join(','));
       continue;
     }
-    if (/charge/i.test(details) && paidOut) {
-      charges.push({ code, amount: paidOut, balance: iBal >= 0 ? parseAmount(r[iBal]) : null });
+    transactions.push({
+      id: get('id') || get('code'),
+      code: get('code'),
+      date,
+      type: get('type') || 'manual',
+      direction: get('direction') === 'in' ? 'in' : 'out',
+      amount: Math.abs(amount),
+      fee: parseAmount(get('fee')) || 0,
+      counterparty: get('counterparty'),
+      phone: get('phone'),
+      account: get('account'),
+      balance: parseAmount(get('balance')),
+      category: get('category') || undefined,
+      note: get('note'),
+      source: 'csv',
+    });
+  }
+  return { transactions, failed };
+}
+
+export function importCsv(text) {
+  const wrong = sniffWrongFile(text);
+  if (wrong) throw new Error(wrong);
+  const rows = parseCsv(text, detectDelimiter(text));
+  if (!rows.length) throw new Error('The file is empty.');
+
+  // Own export format (has "direction" and "amount" columns).
+  const ownIdx = rows.findIndex((r) => {
+    const h = r.map(normHeader);
+    return h.includes('direction') && h.includes('amount') && (h.includes('id') || h.includes('code'));
+  });
+  if (ownIdx >= 0) {
+    const map = {};
+    rows[ownIdx].forEach((c, i) => (map[normHeader(c)] = i));
+    return importOwnFormat(rows.slice(ownIdx + 1), map);
+  }
+
+  const header = findHeader(rows) || guessHeaderless(rows);
+  if (!header) {
+    const preview = rows.slice(0, 3).map((r) => r.filter((c) => c.trim()).join(' | ')).join('  /  ').slice(0, 220);
+    throw new Error(
+      `Could not find the statement columns. Expected headings like Receipt No., Completion Time, Details, Paid In, Withdrawn, Balance. ` +
+      `Your file starts with: "${preview}". If you converted a PDF, make sure the "Detailed Statement" table was included.`,
+    );
+  }
+
+  const m = header.map;
+  const cell = (r, k) => (m[k] != null ? (r[m[k]] || '').trim() : '');
+  const body = rows.slice(header.index + header.size);
+  const records = [];
+  const charges = [];
+  const failed = [];
+  let last = null;
+
+  for (const r of body) {
+    const code = cell(r, 'code');
+    const details = cell(r, 'details');
+    const rawTime = cell(r, 'time');
+    // Repeated header rows (one per PDF page).
+    if (FIELD_OF.get(normHeader(code)) === 'code' || FIELD_OF.get(normHeader(rawTime)) === 'time') continue;
+    const date = normDate(rawTime);
+    // A wrapped "Details" cell continues on the next row with nothing else.
+    if (!code && !date && details) {
+      if (last) last.details = `${last.details} ${details}`.trim();
+      continue;
+    }
+    const status = cell(r, 'status').toLowerCase();
+    if (status && !/^complete/.test(status)) continue;
+
+    let paidIn = parseAmount(cell(r, 'paidIn')) || 0;
+    let paidOut = parseAmount(cell(r, 'withdrawn')) || 0;
+    if (!paidIn && !paidOut && m.amount != null) {
+      const signed = parseAmount(cell(r, 'amount')) || 0;
+      if (signed > 0) paidIn = signed;
+      else paidOut = signed;
+    }
+    paidIn = Math.abs(paidIn);
+    paidOut = Math.abs(paidOut);
+    if (!date || (!paidIn && !paidOut)) {
+      if (code || details) failed.push(r.join(','));
+      last = null;
+      continue;
+    }
+    const balance = parseAmount(cell(r, 'balance'));
+    if (/charge/i.test(details) && paidOut && code) {
+      charges.push({ code, amount: paidOut, balance });
+      last = null;
       continue;
     }
     const direction = paidIn ? 'in' : 'out';
-    const id = byCode.has(code) ? `${code}-${byCode.size}` : code;
+    const rec = { code, date, direction, amount: paidIn || paidOut, balance, details };
+    records.push(rec);
+    last = rec;
+  }
+
+  // Safaricom charges are separate rows sharing the receipt number of the
+  // transaction they belong to, so fold them into its fee.
+  const byCode = new Map();
+  for (const rec of records) {
+    const base = rec.code || `ROW-${rec.date}-${rec.amount}`;
+    const id = byCode.has(base) ? `${base}-${byCode.size}` : base;
     byCode.set(id, {
       id,
-      code,
-      date,
-      type: inferType(details, direction),
-      direction,
-      amount: paidIn || paidOut,
+      code: rec.code,
+      date: rec.date,
+      type: inferType(rec.details, rec.direction),
+      direction: rec.direction,
+      amount: rec.amount,
       fee: 0,
-      ...counterpartyFrom(details),
-      balance: iBal >= 0 ? parseAmount(r[iBal]) : null,
-      note: details,
+      ...counterpartyFrom(rec.details),
+      balance: rec.balance,
+      note: rec.details,
       source: 'statement',
     });
   }
@@ -214,6 +348,9 @@ export function importCsv(text) {
       // The charge row carries the balance after the fee was deducted.
       if (ch.balance != null) tx.balance = ch.balance;
     } else failed.push(`Charge ${ch.code} without matching transaction`);
+  }
+  if (!byCode.size && failed.length) {
+    throw new Error(`Found the statement columns but could not read any rows. First problem row: "${failed[0].slice(0, 160)}"`);
   }
   return { transactions: [...byCode.values()], failed };
 }

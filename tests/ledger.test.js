@@ -113,3 +113,44 @@ test('imports a Safaricom statement CSV and folds charges into fees', () => {
   assert.deepEqual(st.gaps, []);
   assert.equal(st.openingBalance, 0);
 });
+
+test('imports semicolon CSV whose header was split over two rows by a PDF converter', () => {
+  const csv = [
+    'MPESA FULL STATEMENT;;;;;;',
+    'Receipt;Completion;Details;Transaction;Paid In;Withdrawn;Balance',
+    'No.;Time;;Status;;;',
+    'TJ60X;2026-10-01 09:00:00;Funds received from - 0712****678 ACME;Completed;3,450.00;;3,450.00',
+    'TJ61X;2026-10-02 09:00:00;Pay Bill to 888880 - KPLC;Completed;;-500.00;2,950.00',
+    ';;PREPAID Acc. 5432;;;;',
+    'Receipt No.;Completion Time;Details;Transaction Status;Paid In;Withdrawn;Balance',
+  ].join('\n');
+  const { transactions } = importCsv(csv);
+  assert.equal(transactions.length, 2);
+  const bill = transactions.find((t) => t.code === 'TJ61X');
+  assert.equal(bill.counterparty, 'KPLC PREPAID');
+  assert.equal(bill.account, '5432');
+});
+
+test('imports CSVs with other column names and day-first Excel dates', () => {
+  const csv = [
+    'Transaction ID,Date,Description,Money In,Money Out,Balance',
+    'TJ70X,03/10/2026 8:15 PM,Merchant Payment to 12345 - NAIVAS,,(1200.00),800.00',
+  ].join('\n');
+  const [t] = importCsv(csv).transactions;
+  assert.equal(t.date, '2026-10-03T20:15');
+  assert.equal(t.amount, 120000);
+  assert.equal(t.type, 'buygoods');
+});
+
+test('imports headerless Safaricom rows', () => {
+  const csv = 'TJ80ABCDEF,2026-10-04 10:00:00,Customer Transfer to - 0722****111 JANE,Completed,,-250.00,1000.00\n';
+  const [t] = importCsv(csv).transactions;
+  assert.equal(t.direction, 'out');
+  assert.equal(t.amount, 25000);
+  assert.equal(t.balance, 100000);
+});
+
+test('explains files that are not CSV statements', () => {
+  assert.throws(() => importCsv('%PDF-1.7 ...'), /This is a PDF/);
+  assert.throws(() => importCsv('Name,Phone\nJohn,0712\n'), /Your file starts with: "Name \| Phone/);
+});

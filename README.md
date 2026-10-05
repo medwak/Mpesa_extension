@@ -16,7 +16,7 @@ Safaricom does not offer a public API for personal M-Pesa accounts. The Daraja A
 |---|---|
 | **SMS confirmations** | Copy your M-PESA messages and paste them into the popup or the **Import** tab. Paste a whole thread at once; duplicates are skipped. |
 | **Messages for Web** | Open your SMS in the browser (e.g. Google Messages for web), select the M-Pesa messages, right-click and choose **Import selection into M-Pesa Ledger**. |
-| **Full statement** | Request a statement in the M-PESA app or with `*334#` → My Account → M-PESA Statement. Export the table to CSV and upload it in the **Import** tab. The Safaricom columns (`Receipt No., Completion Time, Details, Transaction Status, Paid In, Withdrawn, Balance`) are understood, and charge rows are merged into their transactions. |
+| **Full statement** | Request a statement in the M-PESA app or with `*334#` → My Account → M-PESA Statement. Export the table to CSV and upload it in the **Import** tab. The Safaricom columns (`Receipt No., Completion Time, Details, Transaction Status, Paid In, Withdrawn, Balance`) are understood, and charge rows are merged into their transactions. Comma, semicolon or tab separated files work, and so do other column names (e.g. Transaction ID, Date, Description, Money In, Money Out) and headings split over two rows by PDF converters. |
 | **Manual entries** | Add cash spending or a missing message in the **Transactions** tab. |
 
 Supported message types: received money, send money, Pay Bill, Buy Goods (Till), agent withdrawal, agent deposit, airtime, M-Shwari / Lock Savings transfers, Fuliza draw-downs and repayments, and reversals.
