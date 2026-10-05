@@ -103,15 +103,20 @@
           <div id="sms-result"></div>
         </div>
         <div class="card">
-          <h2>Upload a CSV statement</h2>
-          <p class="sub">Accepts the Safaricom M-Pesa statement columns (Receipt No., Completion Time, Details, Transaction Status, Paid In, Withdrawn, Balance) or a CSV exported from this extension.</p>
-          <input id="csv-file" type="file" accept=".csv,text/csv">
+          <h2>Upload your M-Pesa statement</h2>
+          <p class="sub">Upload the <strong>PDF statement Safaricom emails you</strong> directly, or a CSV with the statement columns (Receipt No., Completion Time, Details, Paid In, Withdrawn, Balance).</p>
+          <input id="csv-file" type="file" accept=".pdf,.csv,application/pdf,text/csv">
+          <form id="pdf-unlock" class="row" hidden>
+            <input id="pdf-password" type="password" placeholder="Statement password" autocomplete="off" required>
+            <button class="primary" type="submit">Unlock &amp; import</button>
+          </form>
+          <p id="pdf-hint" class="sub" hidden>Safaricom statements are locked. The password is the code in the SMS Safaricom sent when you requested the statement.</p>
           <div id="csv-result"></div>
           <h3>Ways to get your M-Pesa data in</h3>
           <ul class="help">
             <li><strong>From your phone:</strong> open the M-PESA thread in Messages, select the messages, copy them and send them to yourself (email, WhatsApp Web, notes). Then paste them here.</li>
             <li><strong>Messages for Web:</strong> open your SMS on the computer (for example Google Messages for web), highlight M-Pesa messages, right-click and choose <em>Import selection into M-Pesa Ledger</em>.</li>
-            <li><strong>Full statement:</strong> request one in the M-PESA app or with <code>*334#</code> → My Account → M-PESA Statement. Safaricom emails a password-protected PDF. Open it, export or copy the table to CSV, and upload it here.</li>
+            <li><strong>Full statement:</strong> request one in the M-PESA app (Statements) or with <code>*334#</code> → My Account → M-PESA Statement. Safaricom emails a password-protected PDF. Upload that PDF here and type the password from the SMS.</li>
           </ul>
         </div>
       </div>

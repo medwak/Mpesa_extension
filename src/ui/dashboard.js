@@ -1,6 +1,7 @@
 import { loadState, saveState, addTransactions, recategorizeAll, defaultState } from '../lib/store.js';
 import { parseMessages } from '../lib/parser.js';
 import { importCsv, transactionsToCsv, statementToCsv } from '../lib/csv.js';
+import { importPdf, isPdf, PdfPasswordError } from '../lib/pdf.js';
 import { summarize, monthlyTrend, topCounterparties, buildStatement, filterRange, monthBounds, describe, sortByDate, TYPE_LABELS } from '../lib/ledger.js';
 import { evaluateBudget, suggestPlan, emptyPlan } from '../lib/budget.js';
 import { formatKsh, parseAmount, toPlain } from '../lib/money.js';
@@ -310,18 +311,56 @@ function bindImport() {
   });
   $('#sms-clear').addEventListener('click', () => { $('#sms-input').value = ''; $('#sms-result').innerHTML = ''; });
 
-  $('#csv-file').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  let pendingPdf = null;
+  const showUnlock = (show) => {
+    $('#pdf-unlock').hidden = !show;
+    $('#pdf-hint').hidden = !show;
+    if (show) $('#pdf-password').focus();
+  };
+
+  async function runImport(task) {
+    const out = $('#csv-result');
+    out.innerHTML = '<p class="sub">Reading statement…</p>';
     try {
-      const { transactions, failed } = importCsv(await file.text());
+      const { transactions, failed } = await task();
+      if (!transactions.length) throw new Error('No transactions were found in this file.');
       const stats = addTransactions(state, transactions);
       await persist();
-      importResult($('#csv-result'), stats, failed);
+      importResult(out, stats, failed);
+      pendingPdf = null;
+      showUnlock(false);
     } catch (err) {
-      $('#csv-result').innerHTML = alertHtml([{ level: 'danger', title: 'Import failed', text: err.message }]);
+      if (err instanceof PdfPasswordError) {
+        showUnlock(true);
+        out.innerHTML = err.wrongPassword ? alertHtml([{ level: 'danger', title: 'Wrong password', text: 'Check the code in the Safaricom SMS and try again.' }]) : '';
+        return;
+      }
+      pendingPdf = null;
+      showUnlock(false);
+      out.innerHTML = alertHtml([{ level: 'danger', title: 'Import failed', text: err.message }]);
     }
+  }
+
+  $('#csv-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
     e.target.value = '';
+    if (!file) return;
+    const buffer = await file.arrayBuffer();
+    if (isPdf(buffer)) {
+      pendingPdf = buffer;
+      $('#pdf-password').value = '';
+      await runImport(() => importPdf(buffer.slice(0)));
+    } else {
+      pendingPdf = null;
+      showUnlock(false);
+      await runImport(async () => importCsv(new TextDecoder().decode(buffer)));
+    }
+  });
+
+  $('#pdf-unlock').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!pendingPdf) return;
+    await runImport(() => importPdf(pendingPdf.slice(0), $('#pdf-password').value));
   });
 }
 

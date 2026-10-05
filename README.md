@@ -16,7 +16,8 @@ Safaricom does not offer a public API for personal M-Pesa accounts. The Daraja A
 |---|---|
 | **SMS confirmations** | Copy your M-PESA messages and paste them into the popup or the **Import** tab. Paste a whole thread at once; duplicates are skipped. |
 | **Messages for Web** | Open your SMS in the browser (e.g. Google Messages for web), select the M-Pesa messages, right-click and choose **Import selection into M-Pesa Ledger**. |
-| **Full statement** | Request a statement in the M-PESA app or with `*334#` → My Account → M-PESA Statement. Export the table to CSV and upload it in the **Import** tab. The Safaricom columns (`Receipt No., Completion Time, Details, Transaction Status, Paid In, Withdrawn, Balance`) are understood, and charge rows are merged into their transactions. Comma, semicolon or tab separated files work, and so do other column names (e.g. Transaction ID, Date, Description, Money In, Money Out) and headings split over two rows by PDF converters. |
+| **Full statement (PDF)** | Request a statement in the M-PESA app or with `*334#` → My Account → M-PESA Statement. Upload the PDF Safaricom emails you in the **Import** tab and type the password from the SMS. The "Detailed Statement" table is read directly, wrapped cells included, and charge rows are merged into their transactions as fees. |
+| **Statement CSV** | CSV files with the statement columns (`Receipt No., Completion Time, Details, Transaction Status, Paid In, Withdrawn, Balance`) also work, comma, semicolon or tab separated, including other column names (e.g. Transaction ID, Date, Description, Money In, Money Out). |
 | **Manual entries** | Add cash spending or a missing message in the **Transactions** tab. |
 
 Supported message types: received money, send money, Pay Bill, Buy Goods (Till), agent withdrawal, agent deposit, airtime, M-Shwari / Lock Savings transfers, Fuliza draw-downs and repayments, and reversals.
@@ -47,6 +48,8 @@ manifest.json            Extension manifest (MV3)
 src/background.js        Right-click "import selection" menu
 src/lib/parser.js        M-Pesa SMS parser
 src/lib/csv.js           CSV import (Safaricom statement + own format) and export
+src/lib/pdf.js           Safaricom PDF statement reader (uses pdf.js)
+vendor/pdfjs/            pdf.js 4.10.38 by Mozilla (Apache-2.0), bundled unmodified
 src/lib/categories.js    Default categories and auto-categorization rules
 src/lib/ledger.js        Summaries, trends, statement builder and reconciliation
 src/lib/budget.js        Budget plans, progress and alerts
@@ -57,7 +60,7 @@ tests/                   Unit tests (node --test)
 
 ## Development
 
-There is no build step and there are no dependencies. Run the tests with Node 18+:
+There is no build step. The only third-party code is pdf.js, bundled in `vendor/pdfjs/` because extensions cannot load remote code. Run the tests with Node 18+:
 
 ```
 npm test
