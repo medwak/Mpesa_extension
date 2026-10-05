@@ -1189,9 +1189,16 @@ async function runInstallChecks() {
   const link = document.querySelector('link[rel="manifest"]');
   let manifest = null;
   try {
-    const res = await fetch(link.href, { cache: 'no-store' });
-    if (res.ok) manifest = await res.json();
-    add(Boolean(manifest), `App manifest found at ${new URL(link.href).pathname}`, `Nothing usable at ${link.href}. Upload the folder that has index.html, manifest.webmanifest and sw.js directly inside it, from the latest download.`);
+    // Browsers fetch the manifest without your login, so test it the same way.
+    const res = await fetch(link.href, { cache: 'no-store', credentials: 'omit', redirect: 'manual' });
+    const blocked = [401, 403].includes(res.status) || res.type === 'opaqueredirect';
+    if (res.ok) manifest = await res.json().catch(() => null);
+    const fix = blocked
+      ? 'The site is private, so the phone cannot read this file. In Netlify, open the site and press "Make public" (or turn off password / visitor access protection), then reload.'
+      : res.status === 404
+        ? `Not found (404) at ${link.href}. Upload the folder that has index.html, manifest.webmanifest and sw.js directly inside it, from the latest download.`
+        : `Nothing usable at ${link.href} (status ${res.status || 'redirect'}). Upload the latest download again.`;
+    add(Boolean(manifest), `App manifest found at ${new URL(link.href).pathname}`, fix);
   } catch {
     add(false, 'App manifest found', `Could not load ${link.href}. Upload the latest download, dragging the folder that contains manifest.webmanifest.`);
   }
@@ -1217,7 +1224,7 @@ async function runInstallChecks() {
   return checks;
 }
 
-export const APP_VERSION = '2026.10.05-7';
+export const APP_VERSION = '2026.10.05-8';
 
 function setUpWebApp() {
   $('#install-card').hidden = false;
