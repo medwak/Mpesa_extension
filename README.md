@@ -45,7 +45,7 @@ The same dashboard also works as an installable web app on your phone. It works 
 A phone can only install the app from a secure (https) web address. Two free options:
 
 - **GitHub Pages:** the workflow in `.github/workflows/pages.yml` publishes the app whenever `main` changes. Enable it once in the repository under *Settings → Pages → Source: GitHub Actions*. The app is then at `https://<your-user>.github.io/<repo>/`.
-- **Netlify Drop (no account setup):** go to https://app.netlify.com/drop and drag this whole folder onto the page. You get an https address in seconds.
+- **Netlify Drop (no account setup):** run `npm run build:web` (or use the ready-made `mpesa-ledger-phone-app.zip` download), unzip it, and drag the `mpesa-ledger-phone-app` folder onto https://app.netlify.com/drop. You get an https address in seconds. To update an existing site, open it in Netlify, go to **Deploys** and drag the folder there.
 
 If your phone only offers "Create shortcut" and says the app cannot be installed, open the app and go to **Settings → Install on this phone**. It checks each thing Chrome needs and says what is missing. The usual cause is uploading an older download, or a folder one level too high or too low: the folder you upload must have `index.html`, `manifest.webmanifest` and `sw.js` directly inside it. The `_headers` file makes Netlify serve these correctly.
 

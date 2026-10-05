@@ -5,7 +5,8 @@
   "description": "Browser extension that turns M-Pesa messages and statements into accounts, statements and budgets.",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "build:web": "sh scripts/build-webapp.sh"
   },
   "license": "MIT"
 }

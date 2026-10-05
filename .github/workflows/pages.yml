@@ -28,11 +28,9 @@ jobs:
         with:
           node-version: 22
       - run: npm test
-      - name: Collect web app files
-        run: |
-          mkdir _site
-          cp -r index.html manifest.webmanifest sw.js icons src vendor _site/
-          rm -f _site/src/background.js _site/src/ui/popup.*
+      - run: sh scripts/build-webapp.sh
       - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/mpesa-ledger-phone-app
       - id: deployment
         uses: actions/deploy-pages@v4

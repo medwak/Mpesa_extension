@@ -1,6 +1,6 @@
 // Service worker for the installable web app (not used by the extension).
 // Caches the app so it opens offline; bump VERSION when files change.
-const VERSION = 'mpesa-ledger-v3';
+const VERSION = 'mpesa-ledger-v4';
 const FILES = [
   './',
   './index.html',
@@ -29,8 +29,15 @@ const FILES = [
   './icons/maskable512.png',
 ];
 
+// Files are cached one by one so a single missing file cannot stop the
+// service worker from installing (which would also block installing the app).
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches
+      .open(VERSION)
+      .then((c) => Promise.allSettled(FILES.map((f) => c.add(f))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (event) => {
