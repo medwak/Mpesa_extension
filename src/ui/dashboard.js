@@ -2,7 +2,7 @@ import { loadState, saveState, addTransactions, importTransactions, recategorize
 import { PERSONAL, WALLET_KINDS, walletTxs, getWallet, budgetsFor, addWallet, removeWallet, walletLabel, businessWallets } from '../lib/wallets.js';
 import { payeeDirectory, billStatuses, billAlerts, suggestBills, newBillFromPayee } from '../lib/bills.js';
 import { fetchNewPayments, registerUrls, relayHealth } from '../lib/daraja.js';
-import { importStatement, deleteStatement, statementsFor, combineStatements } from '../lib/statements.js';
+import { importStatement, deleteStatement, statementsFor, combineStatements, setStatementEnabled } from '../lib/statements.js';
 import { parseMessages } from '../lib/parser.js';
 import { importCsv, transactionsToCsv, statementToCsv } from '../lib/csv.js';
 import { importPdf, isPdf, PdfPasswordError } from '../lib/pdf.js';
@@ -85,7 +85,7 @@ function showTab(name) {
 
 function render(name = currentTab()) {
   renderWalletSelect();
-  ({ overview: renderOverview, transactions: renderTransactions, import: () => {}, statement: renderStatementControls, bills: renderBills, budget: renderBudget, settings: renderSettings })[name]?.();
+  ({ overview: renderOverview, transactions: renderTransactions, import: renderImportLibrary, statement: renderStatementControls, bills: renderBills, budget: renderBudget, settings: renderSettings })[name]?.();
 }
 function currentTab() {
   return $('.tabs button[aria-selected="true"]')?.dataset.tab || 'overview';
@@ -101,6 +101,10 @@ function renderOverview() {
 
   const empty = txs().length === 0;
   $('#ov-empty').hidden = !empty;
+  const offCount = statementsFor(state, cur().id).filter((x) => x.disabled).length;
+  $('#ov-empty p').textContent = offCount
+    ? `Nothing to show: ${offCount} uploaded statement(s) are switched off. Turn them back on in Statements, or import more transactions.`
+    : 'No transactions yet. Start by importing your M-Pesa messages or statement.';
   for (const el of [$('#ov-tiles'), $('#ov-alerts'), ...$$('#tab-overview .grid-2')]) el.hidden = empty;
   if (empty) return;
 
@@ -121,7 +125,9 @@ function renderOverview() {
   const plan = budgets()[chosen];
   const budgetAlerts = plan ? evaluateBudget(plan, txs(), { categories: state.categories, today: today() }).alerts.slice(0, 4) : [];
   const dueAlerts = chosen === thisMonth() ? billAlerts(billStatuses(walletBills(), txs(), today())) : [];
-  $('#ov-alerts').innerHTML = alertHtml([...dueAlerts, ...budgetAlerts]);
+  const off = statementsFor(state, cur().id).filter((x) => x.disabled);
+  const offAlert = off.length ? [{ level: 'info', title: 'Statements switched off', text: `${off.length} uploaded statement(s) are disabled (${off.map((x) => x.name).join(', ')}), so their transactions are left out of these figures. Turn them back on in Statements.` }] : [];
+  $('#ov-alerts').innerHTML = alertHtml([...offAlert, ...dueAlerts, ...budgetAlerts]);
 
   // Trend for the 6 months ending at the chosen month.
   const trend = monthlyTrend(txs(), state.categories).filter((r) => r.month <= chosen).slice(-6);
@@ -267,7 +273,7 @@ function renderTransactions() {
   $('#tx-body').innerHTML = shown.map((t) => `<tr data-id="${esc(t.id)}">
       <td class="num">${fmtDate(t.date)}</td>
       <td><code>${esc(t.code || '—')}</code></td>
-      <td class="details-cell"><div class="who">${esc(t.counterparty || TYPE_LABELS[t.type])}</div><div class="meta">${esc(TYPE_LABELS[t.type] || t.type)}${t.account ? ` · Acc ${esc(t.account)}` : ''}${t.phone ? ` · ${esc(t.phone)}` : ''}${t.note && t.source !== 'statement' ? ` · ${esc(t.note)}` : ''}</div></td>
+      <td class="details-cell"><div class="who">${esc(t.counterparty || TYPE_LABELS[t.type])}</div><div class="meta">${esc(TYPE_LABELS[t.type] || t.type)}${t.account ? ` · Acc ${esc(t.account)}` : ''}${t.phone ? ` · ${esc(t.phone)}` : ''}${t.note && t.source !== 'statement' ? ` · ${esc(t.note)}` : ''}${t.statements?.length ? ` · from ${esc(t.statements.map((id) => state.statements.find((x) => x.id === id)?.name).filter(Boolean).join(', '))}` : ''}</div></td>
       <td><select class="cat-select" aria-label="Category">${categoryOptions(t.category)}</select></td>
       <td class="num ${t.direction === 'in' ? 'in' : ''}">${t.direction === 'in' ? '+' : '−'}${formatKsh(t.amount).replace('Ksh ', '')}</td>
       <td class="num">${t.fee ? formatKsh(t.fee).replace('Ksh ', '') : ''}</td>
@@ -472,10 +478,33 @@ function renderStatementControls() {
   statementView();
 }
 
+function statementSwitch(st) {
+  return `<label class="switch"><input type="checkbox" class="st-toggle" data-id="${esc(st.id)}" ${st.disabled ? '' : 'checked'} aria-label="Include ${esc(st.name)} in your books"><span>${st.disabled ? 'Disabled' : 'Included'}</span></label>`;
+}
+
+function renderImportLibrary() {
+  const list = statementsFor(state, cur().id);
+  $('#imp-lib-body').innerHTML = list.length ? list.map((st) => `<tr class="${st.disabled ? 'disabled-st' : ''}">
+      <td><div class="file">${esc(st.name)}</div></td>
+      <td>${fmtDay(st.from)} – ${fmtDay(st.to)}</td>
+      <td class="num">${st.count}</td>
+      <td>${statementSwitch(st)}</td>
+    </tr>`).join('') : '<tr><td colspan="4" class="sub">No statements uploaded for this account yet.</td></tr>';
+}
+
+async function toggleStatements(ids, enabled) {
+  for (const id of ids) setStatementEnabled(state, id, enabled);
+  await persist();
+  const names = ids.map((id) => state.statements.find((x) => x.id === id)?.name).filter(Boolean);
+  const one = names.length === 1;
+  toast(`${enabled ? 'Included' : 'Disabled'}: ${one ? names[0] : `${names.length} statements`}${enabled ? '' : one ? '. Its transactions are left out until you enable it again.' : '. Their transactions are left out until you enable them again.'}`);
+  render();
+}
+
 function renderLibrary() {
   const list = statementsFor(state, cur().id);
   for (const id of [...libSelected]) if (!list.some((x) => x.id === id)) libSelected.delete(id);
-  $('#lib-body').innerHTML = list.length ? list.map((st) => `<tr data-id="${esc(st.id)}">
+  $('#lib-body').innerHTML = list.length ? list.map((st) => `<tr data-id="${esc(st.id)}" class="${st.disabled ? 'disabled-st' : ''}">
       <td><input type="checkbox" class="lib-check" ${libSelected.has(st.id) ? 'checked' : ''} aria-label="Select ${esc(st.name)}"></td>
       <td><div class="file">${esc(st.name)}</div><div class="meta">${st.kind.toUpperCase()}</div></td>
       <td>${fmtDay(st.from)} – ${fmtDay(st.to)}</td>
@@ -483,13 +512,16 @@ function renderLibrary() {
       <td class="num">${formatKsh(st.openingBalance)}</td>
       <td class="num">${formatKsh(st.closingBalance)}</td>
       <td>${new Date(st.importedAt).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+      <td>${statementSwitch(st)}</td>
       <td><div class="row" style="margin:0;flex-wrap:nowrap"><button data-lib="view">View</button><button class="danger" data-lib="delete">Delete</button></div></td>
-    </tr>`).join('') : '<tr><td colspan="8" class="sub">No statements uploaded for this account yet. Add the PDF Safaricom emailed you, or a CSV statement.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="9" class="sub">No statements uploaded for this account yet. Add the PDF Safaricom emailed you, or a CSV statement.</td></tr>';
   $('#lib-all').checked = list.length > 0 && libSelected.size === list.length;
   const n = libSelected.size;
   $('#lib-combine').disabled = n < 1;
   $('#lib-combine').textContent = n > 1 ? `Combine ${n} statements` : 'View selected';
   $('#lib-delete-selected').disabled = n < 1;
+  $('#lib-disable-selected').disabled = ![...libSelected].some((id) => !state.statements.find((x) => x.id === id)?.disabled);
+  $('#lib-enable-selected').disabled = ![...libSelected].some((id) => state.statements.find((x) => x.id === id)?.disabled);
   if (n) {
     const c = combineStatements(state, [...libSelected]);
     $('#lib-selinfo').textContent = `${n} selected · ${fmtDay(c.from)} – ${fmtDay(c.to)}${c.gaps.length ? ` · ${c.gaps.length} gap(s) not covered` : ''}`;
@@ -645,6 +677,11 @@ function bindStatement() {
     renderStatementControls();
   };
 
+  document.addEventListener('change', (e) => {
+    if (e.target.classList?.contains('st-toggle')) toggleStatements([e.target.dataset.id], e.target.checked);
+  });
+  $('#lib-disable-selected').addEventListener('click', () => toggleStatements([...libSelected], false));
+  $('#lib-enable-selected').addEventListener('click', () => toggleStatements([...libSelected], true));
   $('#lib-body').addEventListener('change', (e) => {
     if (!e.target.classList.contains('lib-check')) return;
     const id = e.target.closest('tr').dataset.id;

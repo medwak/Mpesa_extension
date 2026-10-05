@@ -19,8 +19,23 @@ export function walletOf(tx) {
   return tx.wallet || PERSONAL;
 }
 
-export function walletTxs(state, walletId) {
-  return state.transactions.filter((t) => walletOf(t) === walletId);
+// Transactions that only come from statements you have disabled are left out.
+// Pass { includeDisabled: true } to get everything.
+export function walletTxs(state, walletId, { includeDisabled = false } = {}) {
+  const off = includeDisabled ? null : disabledStatementIds(state);
+  return state.transactions.filter((t) => walletOf(t) === walletId && (!off || isActive(t, off)));
+}
+
+export function disabledStatementIds(state) {
+  return new Set((state.statements || []).filter((s) => s.disabled).map((s) => s.id));
+}
+
+const STATEMENT_SOURCES = new Set(['statement', 'csv']);
+
+export function isActive(tx, disabledIds) {
+  if (!disabledIds.size || !tx.statements?.length) return true;
+  if (!STATEMENT_SOURCES.has(tx.source)) return true; // also came from SMS, Daraja or by hand
+  return tx.statements.some((id) => !disabledIds.has(id));
 }
 
 export function getWallet(state, walletId) {
