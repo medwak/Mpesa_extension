@@ -1217,8 +1217,11 @@ async function runInstallChecks() {
   return checks;
 }
 
+export const APP_VERSION = '2026.10.05-7';
+
 function setUpWebApp() {
   $('#install-card').hidden = false;
+  $('#app-version').textContent = APP_VERSION;
   $('#install-recheck').addEventListener('click', runInstallChecks);
   setTimeout(runInstallChecks, 1500);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
