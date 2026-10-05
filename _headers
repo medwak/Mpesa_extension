@@ -1,0 +1,8 @@
+# Netlify settings for the phone app (ignored by the browser extension).
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: no-cache
+/sw.js
+  Content-Type: text/javascript
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /

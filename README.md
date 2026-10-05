@@ -47,6 +47,8 @@ A phone can only install the app from a secure (https) web address. Two free opt
 - **GitHub Pages:** the workflow in `.github/workflows/pages.yml` publishes the app whenever `main` changes. Enable it once in the repository under *Settings → Pages → Source: GitHub Actions*. The app is then at `https://<your-user>.github.io/<repo>/`.
 - **Netlify Drop (no account setup):** go to https://app.netlify.com/drop and drag this whole folder onto the page. You get an https address in seconds.
 
+If your phone only offers "Create shortcut" and says the app cannot be installed, open the app and go to **Settings → Install on this phone**. It checks each thing Chrome needs and says what is missing. The usual cause is uploading an older download, or a folder one level too high or too low: the folder you upload must have `index.html`, `manifest.webmanifest` and `sw.js` directly inside it. The `_headers` file makes Netlify serve these correctly.
+
 ### Install it
 
 1. Open the address in **Chrome on Android** and tap **⋮ → Add to Home screen / Install app** (or **Settings → Install app on this device** inside the app).

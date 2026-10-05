@@ -1180,7 +1180,47 @@ async function importShared(params) {
 
 // Installable web app: offline cache, install button, durable storage and
 // keeping several open windows in sync.
+// Explains, on the phone itself, why the browser will or will not install
+// the app. Each check matches one of Chrome's install requirements.
+async function runInstallChecks() {
+  const checks = [];
+  const add = (ok, text, fix = '') => checks.push({ ok, text, fix });
+  add(window.isSecureContext, 'Opened over a secure https:// address', 'Open the https:// link from your host (Netlify, GitHub Pages).');
+  const link = document.querySelector('link[rel="manifest"]');
+  let manifest = null;
+  try {
+    const res = await fetch(link.href, { cache: 'no-store' });
+    if (res.ok) manifest = await res.json();
+    add(Boolean(manifest), `App manifest found at ${new URL(link.href).pathname}`, `Nothing usable at ${link.href}. Upload the folder that has index.html, manifest.webmanifest and sw.js directly inside it, from the latest download.`);
+  } catch {
+    add(false, 'App manifest found', `Could not load ${link.href}. Upload the latest download, dragging the folder that contains manifest.webmanifest.`);
+  }
+  if (manifest) {
+    const icons = manifest.icons || [];
+    const base = link.href;
+    const sizes = await Promise.all(['192x192', '512x512'].map(async (size) => {
+      const icon = icons.find((i) => i.sizes === size);
+      if (!icon) return false;
+      try {
+        return (await fetch(new URL(icon.src, base), { cache: 'no-store' })).ok;
+      } catch {
+        return false;
+      }
+    }));
+    add(sizes.every(Boolean), 'App icons (192 and 512 px) load', 'The icons folder is missing from the upload.');
+  }
+  const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+  add(Boolean(reg), 'Offline support (service worker) is running', 'sw.js is missing from the site root, or the page needs one reload.');
+  const installed = matchMedia('(display-mode: standalone)').matches;
+  if (installed) add(true, 'Already running as an installed app');
+  $('#install-checks').innerHTML = checks.map((c) => `<li class="${c.ok ? 'ok' : 'bad'}"><span class="mark">${c.ok ? '✓' : '✗'}</span><span>${esc(c.text)}${!c.ok && c.fix ? `<div class="fix">${esc(c.fix)}</div>` : ''}</span></li>`).join('');
+  return checks;
+}
+
 function setUpWebApp() {
+  $('#install-card').hidden = false;
+  $('#install-recheck').addEventListener('click', runInstallChecks);
+  setTimeout(runInstallChecks, 1500);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register(new URL('../../sw.js', import.meta.url), { scope: new URL('../../', import.meta.url).pathname }).catch(() => {});
   }
