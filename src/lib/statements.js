@@ -94,6 +94,14 @@ export function deleteStatement(state, statementId) {
   return { removed, kept };
 }
 
+// Disabled statements stay in the list but their transactions are left out of
+// totals, budgets, bills and statements until enabled again.
+export function setStatementEnabled(state, statementId, enabled) {
+  const st = state.statements.find((s) => s.id === statementId);
+  if (st) st.disabled = !enabled;
+  return st;
+}
+
 export function statementTxs(state, statementIds) {
   const ids = new Set(statementIds);
   return state.transactions.filter((t) => t.statements?.some((x) => ids.has(x)));

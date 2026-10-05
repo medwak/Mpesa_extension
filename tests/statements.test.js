@@ -77,3 +77,23 @@ test('reads the printed statement period from a PDF', () => {
   assert.deepEqual(statementPeriod(['M-PESA STATEMENT', 'Statement Period: 01 Sep 2026 - 30 Sep 2026']), { from: '2026-09-01', to: '2026-09-30' });
   assert.deepEqual(statementPeriod(['nothing here']), {});
 });
+
+test('disabled statements hide their transactions until enabled again', async () => {
+  const { setStatementEnabled } = await import('../src/lib/statements.js');
+  const { walletTxs } = await import('../src/lib/wallets.js');
+  const state = defaultState();
+  addTransactions(state, [{ ...MAR[0], id: 'SMS1', code: 'SMS1', source: 'sms' }]);
+  const jan = importStatement(state, JAN, PERSONAL, { name: 'jan' }).statement.id;
+  const feb = importStatement(state, [JAN[1], ...FEB], PERSONAL, { name: 'feb' }).statement.id;
+  // A1 only in Jan; A2 in Jan and Feb; SMS1 from SMS.
+  setStatementEnabled(state, jan, false);
+  assert.deepEqual(walletTxs(state, PERSONAL).map((t) => t.id).sort(), ['A2', 'B1', 'B2', 'SMS1']);
+  setStatementEnabled(state, feb, false);
+  assert.deepEqual(walletTxs(state, PERSONAL).map((t) => t.id), ['SMS1']);
+  assert.equal(walletTxs(state, PERSONAL, { includeDisabled: true }).length, 5);
+  // Disabled statements can still be viewed or combined on purpose.
+  assert.equal(combineStatements(state, [jan]).txs.length, 2);
+  setStatementEnabled(state, jan, true);
+  setStatementEnabled(state, feb, true);
+  assert.equal(walletTxs(state, PERSONAL).length, 5);
+});

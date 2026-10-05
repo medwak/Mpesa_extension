@@ -132,6 +132,19 @@
           </ul>
         </div>
       </div>
+      <div class="card">
+        <div class="lib-head">
+          <div>
+            <h2>Your uploaded statements</h2>
+            <p class="sub">Switch a statement off to leave it out of your books, or manage, combine and delete them in Statements.</p>
+          </div>
+          <button data-goto="statement">Manage statements</button>
+        </div>
+        <div class="table-wrap"><table class="data compact">
+          <thead><tr><th>Statement</th><th>Period</th><th class="num">Transactions</th><th>In your books</th></tr></thead>
+          <tbody id="imp-lib-body"></tbody>
+        </table></div>
+      </div>
     </section>
 
     <!-- STATEMENT -->
@@ -141,7 +154,7 @@
         <div class="lib-head">
           <div>
             <h2>Your uploaded statements</h2>
-            <p class="sub">Each M-Pesa statement you upload (PDF or CSV) is kept here as its own entry. Delete one at any time, or tick several and combine them into one statement, for example January to March, or 2024 to 2026.</p>
+            <p class="sub">Each M-Pesa statement you upload (PDF or CSV) is kept here as its own entry. <strong>Disable</strong> one to leave its transactions out of your totals, budgets and statements without losing it (enable it again any time), or <strong>delete</strong> it completely. Tick several to combine them into one statement, for example January to March, or 2024 to 2026.</p>
           </div>
           <label class="button primary">Add statement (PDF or CSV)<input id="lib-file" type="file" accept=".pdf,.csv,application/pdf,text/csv" multiple hidden></label>
         </div>
@@ -155,12 +168,14 @@
         <div id="lib-result"></div>
         <div class="table-wrap">
           <table class="data compact">
-            <thead><tr><th><input type="checkbox" id="lib-all" aria-label="Select all statements"></th><th>Statement</th><th>Period</th><th class="num">Transactions</th><th class="num">Opening</th><th class="num">Closing</th><th>Added</th><th></th></tr></thead>
+            <thead><tr><th><input type="checkbox" id="lib-all" aria-label="Select all statements"></th><th>Statement</th><th>Period</th><th class="num">Transactions</th><th class="num">Opening</th><th class="num">Closing</th><th>Added</th><th>In your books</th><th></th></tr></thead>
             <tbody id="lib-body"></tbody>
           </table>
         </div>
         <div class="row">
           <button class="primary" id="lib-combine" disabled>Combine selected</button>
+          <button id="lib-disable-selected" disabled>Disable selected</button>
+          <button id="lib-enable-selected" disabled>Enable selected</button>
           <button class="danger" id="lib-delete-selected" disabled>Delete selected</button>
           <span class="sub" id="lib-selinfo" style="margin:0"></span>
         </div>
