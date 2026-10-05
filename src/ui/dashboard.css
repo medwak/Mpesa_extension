@@ -97,6 +97,9 @@ ul.help li { margin-bottom: 6px; }
   .grid-2, .budget-grid { grid-template-columns: minmax(0, 1fr); }
   .topbar, main { padding-left: 16px; padding-right: 16px; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tile { padding: 10px 12px; }
+  .tile .value { font-size: 16px; }
   .form-grid .span-2 { grid-column: auto; }
 }
 

@@ -1,0 +1,38 @@
+# Publishes the installable phone app to GitHub Pages on every push to main.
+# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
+name: Deploy web app to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - name: Collect web app files
+        run: |
+          mkdir _site
+          cp -r index.html manifest.webmanifest sw.js icons src vendor _site/
+          rm -f _site/src/background.js _site/src/ui/popup.*
+      - uses: actions/upload-pages-artifact@v3
+      - id: deployment
+        uses: actions/deploy-pages@v4

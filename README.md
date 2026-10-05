@@ -1,6 +1,6 @@
 # M-Pesa Ledger
 
-A browser extension for Chrome, Edge, Brave and other Chromium browsers. It turns your M-Pesa transactions into:
+A desktop browser extension (Chrome, Edge, Brave and other Chromium browsers) and an installable phone app, built from the same code. It turns your M-Pesa transactions into:
 
 - **Accounting.** Every transaction is categorized automatically. You get income, expenses, net savings and transaction costs per month, plus your top payees and sources of money.
 - **M-Pesa statements.** Generate a statement for any period, with opening and closing balances, a running balance, a summary by transaction type and an income & expenditure table. Print it, save it as PDF or download it as CSV. The statement also checks every balance against the balance in your messages and tells you when a transaction is missing.
@@ -31,6 +31,26 @@ Supported message types: received money, send money, Pay Bill, Buy Goods (Till),
 
 To try it without real data, go to **Settings → Load demo data**, or import the files in `samples/`: paste `sample-sms.txt` into the SMS box, or upload `sample-statement.csv` or `sample-statement-password-123456.pdf` (password `123456`). All names and numbers in them are fictional.
 
+## Phone app (Android and iPhone)
+
+The same dashboard also works as an installable web app on your phone. It works offline, and your data stays on the phone.
+
+**Share straight from Messages (Android):** long-press an M-Pesa SMS (or select several), tap **Share** and choose **M-Pesa Ledger**. The message is imported immediately and duplicates are skipped. On iPhone, copy the message and use **Paste from clipboard** on the Import tab.
+
+### Put it online (needed once)
+
+A phone can only install the app from a secure (https) web address. Two free options:
+
+- **GitHub Pages:** the workflow in `.github/workflows/pages.yml` publishes the app whenever `main` changes. Enable it once in the repository under *Settings → Pages → Source: GitHub Actions*. The app is then at `https://<your-user>.github.io/<repo>/`.
+- **Netlify Drop (no account setup):** go to https://app.netlify.com/drop and drag this whole folder onto the page. You get an https address in seconds.
+
+### Install it
+
+1. Open the address in **Chrome on Android** and tap **⋮ → Add to Home screen / Install app** (or **Settings → Install app on this device** inside the app).
+2. On **iPhone**, open it in Safari and tap **Share → Add to Home Screen**. iPhone does not offer the Share-to-app shortcut, so use Paste from clipboard.
+
+The phone app and the desktop extension each keep their own data. Move data between them with **Settings → Download backup** and **Restore backup**.
+
 ## How the accounting works
 
 - Amounts are stored as integer cents, so totals never drift.
@@ -54,7 +74,10 @@ src/lib/categories.js    Default categories and auto-categorization rules
 src/lib/ledger.js        Summaries, trends, statement builder and reconciliation
 src/lib/budget.js        Budget plans, progress and alerts
 src/lib/store.js         Storage (chrome.storage, localStorage fallback)
-src/ui/                  Popup and dashboard
+src/ui/                  Popup and dashboard (the dashboard is also the phone app)
+manifest.webmanifest     Phone app manifest (install + Share target)
+sw.js                    Phone app offline cache
+index.html               Phone app entry page
 tests/                   Unit tests (node --test)
 ```
 
