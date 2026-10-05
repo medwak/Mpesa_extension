@@ -59,7 +59,7 @@ function categoryOptions(selected, { includeAll = false } = {}) {
 function alertHtml(alerts) {
   const icon = { danger: '!', warning: '!', info: 'i', success: '✓' };
   const word = { danger: 'Over budget', warning: 'Warning', info: 'Note', success: 'Done' };
-  return alerts.map((a) => `<div class="alert ${a.level}"><span class="icon" aria-hidden="true">${icon[a.level]}</span><span><strong>${word[a.level]}:</strong> ${esc(a.text)}</span></div>`).join('');
+  return alerts.map((a) => `<div class="alert ${a.level}"><span class="icon" aria-hidden="true">${icon[a.level]}</span><span><strong>${a.title || word[a.level]}:</strong> ${esc(a.text)}</span></div>`).join('');
 }
 
 /* ---------------- Tabs ---------------- */
@@ -319,7 +319,7 @@ function bindImport() {
       await persist();
       importResult($('#csv-result'), stats, failed);
     } catch (err) {
-      $('#csv-result').innerHTML = alertHtml([{ level: 'danger', text: err.message }]);
+      $('#csv-result').innerHTML = alertHtml([{ level: 'danger', title: 'Import failed', text: err.message }]);
     }
     e.target.value = '';
   });
