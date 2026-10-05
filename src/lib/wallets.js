@@ -54,6 +54,7 @@ export function removeWallet(state, walletId) {
   state.transactions = state.transactions.filter((t) => walletOf(t) !== walletId);
   if (state.walletBudgets) delete state.walletBudgets[walletId];
   state.bills = (state.bills || []).filter((b) => (b.wallet || PERSONAL) !== walletId);
+  state.statements = (state.statements || []).filter((s) => (s.wallet || PERSONAL) !== walletId);
   if (state.settings?.currentWallet === walletId) state.settings.currentWallet = PERSONAL;
 }
 

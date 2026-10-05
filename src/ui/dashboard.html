@@ -136,22 +136,68 @@
 
     <!-- STATEMENT -->
     <section id="tab-statement" class="tab-panel" hidden>
-      <div class="toolbar no-print">
-        <h1>Statements</h1>
-        <label>From <input id="st-from" type="date"></label>
-        <label>To <input id="st-to" type="date"></label>
-        <label>Opening balance <input id="st-opening" type="number" step="0.01" placeholder="auto"></label>
-        <button class="primary" id="st-generate">Generate</button>
+      <h1 class="no-print">Statements</h1>
+      <div class="card no-print" id="lib-card">
+        <div class="lib-head">
+          <div>
+            <h2>Your uploaded statements</h2>
+            <p class="sub">Each M-Pesa statement you upload (PDF or CSV) is kept here as its own entry. Delete one at any time, or tick several and combine them into one statement, for example January to March, or 2024 to 2026.</p>
+          </div>
+          <label class="button primary">Add statement (PDF or CSV)<input id="lib-file" type="file" accept=".pdf,.csv,application/pdf,text/csv" multiple hidden></label>
+        </div>
+        <form id="lib-unlock" class="row" hidden>
+          <span id="lib-unlock-name" class="sub" style="margin:0"></span>
+          <input id="lib-password" type="password" placeholder="Statement password" autocomplete="off" required>
+          <button class="primary" type="submit">Unlock &amp; add</button>
+          <button type="button" id="lib-skip">Skip this file</button>
+        </form>
+        <p id="lib-hint" class="sub" hidden>Safaricom statements are locked. The password is the code in the SMS Safaricom sent when you requested the statement.</p>
+        <div id="lib-result"></div>
+        <div class="table-wrap">
+          <table class="data compact">
+            <thead><tr><th><input type="checkbox" id="lib-all" aria-label="Select all statements"></th><th>Statement</th><th>Period</th><th class="num">Transactions</th><th class="num">Opening</th><th class="num">Closing</th><th>Added</th><th></th></tr></thead>
+            <tbody id="lib-body"></tbody>
+          </table>
+        </div>
+        <div class="row">
+          <button class="primary" id="lib-combine" disabled>Combine selected</button>
+          <button class="danger" id="lib-delete-selected" disabled>Delete selected</button>
+          <span class="sub" id="lib-selinfo" style="margin:0"></span>
+        </div>
+      </div>
+
+      <div class="card no-print">
+        <h2>Make a statement for any period</h2>
+        <p class="sub">Uses everything in this account: uploaded statements, SMS and manual entries.</p>
+        <div class="toolbar">
+          <label>From <input id="st-from" type="date"></label>
+          <label>To <input id="st-to" type="date"></label>
+          <label>Opening balance <input id="st-opening" type="number" step="0.01" placeholder="auto"></label>
+          <button class="primary" id="st-generate">Generate</button>
+        </div>
+        <div class="row presets">
+          <button data-preset="this-month">This month</button>
+          <button data-preset="last-month">Last month</button>
+          <button data-preset="3-months">Last 3 months</button>
+          <button data-preset="6-months">Last 6 months</button>
+          <button data-preset="year">This year</button>
+          <button data-preset="all">All time</button>
+        </div>
+        <div class="row presets">
+          <label>Months <input id="st-mfrom" type="month" aria-label="First month"></label>
+          <label>to <input id="st-mto" type="month" aria-label="Last month"></label>
+          <button id="st-months">Use these months</button>
+          <label>Whole years
+            <select id="st-yfrom" aria-label="First year"></select>
+          </label>
+          <label>to <select id="st-yto" aria-label="Last year"></select></label>
+          <button id="st-years">Use these years</button>
+        </div>
+      </div>
+
+      <div class="row no-print">
         <button id="st-print">Print / Save PDF</button>
         <button id="st-csv">Download CSV</button>
-      </div>
-      <div class="row no-print presets">
-        <button data-preset="this-month">This month</button>
-        <button data-preset="last-month">Last month</button>
-        <button data-preset="3-months">Last 3 months</button>
-        <button data-preset="6-months">Last 6 months</button>
-        <button data-preset="year">This year</button>
-        <button data-preset="all">All time</button>
       </div>
       <div id="st-output"></div>
     </section>

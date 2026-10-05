@@ -20,6 +20,7 @@ export function defaultState() {
     wallets: structuredClone(DEFAULT_WALLETS),
     walletBudgets: {},
     bills: [],
+    statements: [],
     settings: { currentWallet: PERSONAL },
     seenDefaultCategories: DEFAULT_CATEGORIES.map((c) => c.name),
   };
@@ -33,6 +34,7 @@ export function migrate(saved) {
   if (!state.wallets.some((w) => w.id === state.settings.currentWallet)) state.settings.currentWallet = PERSONAL;
   state.walletBudgets ||= {};
   state.bills ||= [];
+  state.statements ||= [];
   // Offer categories added in newer versions once, so a default you deleted
   // on purpose does not come back.
   const seen = new Set(saved?.seenDefaultCategories || DEFAULT_CATEGORIES.map((c) => c.name).filter((n) => !ADDED_IN_V2.includes(n)));
@@ -69,7 +71,15 @@ export async function saveState(state) {
 // Transactions on a business account get an id prefixed with the account, so
 // paying your own Till from your personal M-Pesa is kept on both sides.
 export function addTransactions(state, incoming, walletId = PERSONAL) {
-  const prepared = incoming.map((tx) => {
+  const prepared = prepareTransactions(state, incoming, walletId);
+  const result = mergeTransactions(state.transactions, prepared);
+  state.transactions = result.merged;
+  return { added: result.added, duplicates: result.duplicates };
+}
+
+// Assigns the account, account-scoped id and category to incoming transactions.
+export function prepareTransactions(state, incoming, walletId = PERSONAL) {
+  return incoming.map((tx) => {
     const wallet = tx.wallet || walletId;
     const id = wallet === PERSONAL || String(tx.id).startsWith(`${wallet}:`) ? tx.id : `${wallet}:${tx.id}`;
     return {
@@ -81,9 +91,6 @@ export function addTransactions(state, incoming, walletId = PERSONAL) {
         : categorize(tx, state.rules, state.categories),
     };
   });
-  const result = mergeTransactions(state.transactions, prepared);
-  state.transactions = result.merged;
-  return { added: result.added, duplicates: result.duplicates };
 }
 
 // Imports into the chosen account, except that business payments imported

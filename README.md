@@ -3,6 +3,7 @@
 A desktop browser extension (Chrome, Edge, Brave and other Chromium browsers) and an installable phone app, built from the same code. It turns your M-Pesa transactions into:
 
 - **Accounting.** Every transaction is categorized automatically. You get income, expenses, net savings and transaction costs per month, plus your top payees and sources of money.
+- **Your uploaded statements.** Every PDF or CSV statement you upload is kept as its own entry, showing its period, number of transactions and opening/closing balances. Delete any of them at any time: its transactions go too, except ones also in another statement or that came from SMS or manual entries. Tick several to combine them into one statement (consecutive months or whole years). Overlapping statements are counted once, and you are warned about any period none of them covers.
 - **M-Pesa statements.** Generate a statement for any period, with opening and closing balances, a running balance, a summary by transaction type and an income & expenditure table. Print it, save it as PDF or download it as CSV. The statement also checks every balance against the balance in your messages and tells you when a transaction is missing.
 - **Bills, Paybills and Tills.** A directory of every Paybill and Till you have paid, with each one's payment history. Track regular bills (rent, KPLC, water, internet) with a usual amount and due day, see whether each is paid this month, and get reminders when one is due or overdue. Regular bills are suggested automatically.
 - **Business accounts.** Add the Till, Paybill or Pochi la Biashara you own as a separate account, so business money never mixes with personal money. It shows collections, today's takings, top customers and collections per account number, with its own statements and budgets. Payments can sync automatically through Safaricom's Daraja API.
@@ -79,6 +80,7 @@ Ways to get business payments in:
 manifest.json            Extension manifest (MV3)
 src/background.js        Right-click "import selection" menu
 src/lib/parser.js        M-Pesa SMS parser
+src/lib/statements.js    Uploaded statements: keep, delete and combine
 src/lib/csv.js           CSV import (Safaricom statement + own format) and export
 src/lib/pdf.js           Safaricom PDF statement reader (uses pdf.js)
 vendor/pdfjs/            pdf.js 4.10.38 by Mozilla (Apache-2.0), bundled unmodified

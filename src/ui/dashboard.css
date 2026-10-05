@@ -135,3 +135,13 @@ ul.help li { margin-bottom: 6px; }
 .account-row details { margin-top: 8px; }
 .account-row .form-grid input { width: 100%; }
 .sync-status { font-size: 12px; color: var(--text-2); }
+
+/* Statements library */
+.lib-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.lib-head .sub { max-width: 720px; }
+label.button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; white-space: nowrap; }
+#lib-body .file { font-weight: 600; word-break: break-all; }
+#lib-body .meta { color: var(--muted); font-size: 12px; }
+.presets label { display: flex; gap: 6px; align-items: center; color: var(--text-2); font-size: 13px; }
+.statement .sources { font-size: 12px; color: var(--text-2); margin: -8px 0 12px; }
+button:disabled { opacity: .5; cursor: not-allowed; }
