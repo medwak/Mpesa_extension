@@ -157,3 +157,10 @@ tr.disabled-st td:not(:last-child):not(:nth-last-child(2)) { opacity: .55; }
 tr.disabled-st .file { text-decoration: line-through; }
 table.data td input[type="checkbox"] { width: auto; padding: 0; }
 table.data td .switch input { width: 36px; height: 20px; padding: 0; }
+
+.checks { list-style: none; padding: 0; margin: 8px 0 12px; }
+.checks li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; }
+.checks .mark { font-weight: 700; width: 1.2em; flex: none; }
+.checks .ok .mark { color: var(--good); }
+.checks .bad .mark { color: var(--critical); }
+.checks .fix { color: var(--text-2); font-size: 12px; }
