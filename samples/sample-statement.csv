@@ -1,0 +1,11 @@
+Receipt No.,Completion Time,Details,Transaction Status,Paid In,Withdrawn,Balance
+TL07KQ2B6Y,2026-10-07 19:05:11,Customer Transfer of Funds Charge,Completed,,-13.00,8487.00
+TL07KQ2B6Y,2026-10-07 19:05:11,Customer Transfer to - 0722****111 JANE WANJIKU,Completed,,-1000.00,8500.00
+TL06JP1A5X,2026-10-06 13:20:45,Merchant Payment to 123456 - JAVA HOUSE ABC PLACE,Completed,,-850.00,9500.00
+TL05HN9Z4W,2026-10-05 08:10:02,Pay Bill to 888880 - KPLC PREPAID Acc. 54321098765,Completed,,-1500.00,10350.00
+TL04GM8Y3V,2026-10-04 17:45:30,Withdrawal Charge,Completed,,-29.00,11850.00
+TL04GM8Y3V,2026-10-04 17:45:30,Customer Withdrawal At Agent Till 654321 - CITY AGENT CBD,Completed,,-2000.00,11879.00
+TL03FL7X2U,2026-10-03 07:30:00,Airtime Purchase,Completed,,-100.00,13879.00
+TL02EK6W1T,2026-10-02 10:00:00,M-Shwari Deposit,Completed,,-5000.00,13979.00
+TL01DJ5V0S,2026-10-01 09:00:00,Funds received from - 0712****678 ACME LIMITED,Completed,18000.00,,18979.00
+TL01DJ4U9R,2026-10-01 08:30:00,Customer Transfer to - 0733****222 FAILED TEST,Failed,,-500.00,979.00

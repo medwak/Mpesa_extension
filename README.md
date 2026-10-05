@@ -29,7 +29,7 @@ Supported message types: received money, send money, Pay Bill, Buy Goods (Till),
 3. Click **Load unpacked** and select this folder (the one containing `manifest.json`).
 4. Pin **M-Pesa Ledger** to the toolbar. Click it for this month's numbers and quick paste. Click **Open dashboard** for everything else.
 
-To try it without real data, go to **Settings → Load demo data**.
+To try it without real data, go to **Settings → Load demo data**, or import the files in `samples/`: paste `sample-sms.txt` into the SMS box, or upload `sample-statement.csv` or `sample-statement-password-123456.pdf` (password `123456`). All names and numbers in them are fictional.
 
 ## How the accounting works
 
