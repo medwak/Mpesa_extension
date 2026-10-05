@@ -4,6 +4,8 @@ A desktop browser extension (Chrome, Edge, Brave and other Chromium browsers) an
 
 - **Accounting.** Every transaction is categorized automatically. You get income, expenses, net savings and transaction costs per month, plus your top payees and sources of money.
 - **M-Pesa statements.** Generate a statement for any period, with opening and closing balances, a running balance, a summary by transaction type and an income & expenditure table. Print it, save it as PDF or download it as CSV. The statement also checks every balance against the balance in your messages and tells you when a transaction is missing.
+- **Bills, Paybills and Tills.** A directory of every Paybill and Till you have paid, with each one's payment history. Track regular bills (rent, KPLC, water, internet) with a usual amount and due day, see whether each is paid this month, and get reminders when one is due or overdue. Regular bills are suggested automatically.
+- **Business accounts.** Add the Till, Paybill or Pochi la Biashara you own as a separate account, so business money never mixes with personal money. It shows collections, today's takings, top customers and collections per account number, with its own statements and budgets. Payments can sync automatically through Safaricom's Daraja API.
 - **Budget planning.** Set expected income, a savings goal and monthly limits per category. Track progress with "on track", "spending fast", "almost used up" and "over budget" warnings, with a daily allowance for the rest of the month. You can start a new month from last month's plan or from last month's actual spending.
 
 All data stays in your browser (`chrome.storage.local`). Nothing is sent to any server.
@@ -51,6 +53,16 @@ A phone can only install the app from a secure (https) web address. Two free opt
 
 The phone app and the desktop extension each keep their own data. Move data between them with **Settings → Download backup** and **Restore backup**.
 
+## Business accounts (your own Till or Paybill)
+
+Open **Settings → Accounts** and add your Till, Paybill or Pochi la Biashara. An account menu then appears at the top of the dashboard; every tab (overview, transactions, statements, bills, budget) shows the selected account only.
+
+Ways to get business payments in:
+
+- **Payment SMS** sent to the business phone ("Ksh500.00 received from JOHN DOE… New Account balance is…"). Paste or share them like personal messages. If you import them while your personal account is selected, they are moved to your business account automatically (when you have exactly one).
+- **M-PESA Org Portal statement** (CSV). Columns such as Reason Type, Other Party Info and A/C No. are read, so customer names, account numbers, settlements to bank and payouts are recognised.
+- **Automatic sync through Daraja.** Set up the free relay in [`relay/`](relay/README.md) and paste its address and token into the account's settings. New customer payments then arrive on their own.
+
 ## How the accounting works
 
 - Amounts are stored as integer cents, so totals never drift.
@@ -73,6 +85,10 @@ vendor/pdfjs/            pdf.js 4.10.38 by Mozilla (Apache-2.0), bundled unmodif
 src/lib/categories.js    Default categories and auto-categorization rules
 src/lib/ledger.js        Summaries, trends, statement builder and reconciliation
 src/lib/budget.js        Budget plans, progress and alerts
+src/lib/bills.js         Paybill/Till directory, saved bills, reminders and suggestions
+src/lib/wallets.js       Personal and business accounts
+src/lib/daraja.js        Daraja C2B sync with the relay
+relay/                   Cloudflare Worker that receives Daraja payments (see relay/README.md)
 src/lib/store.js         Storage (chrome.storage, localStorage fallback)
 src/ui/                  Popup and dashboard (the dashboard is also the phone app)
 manifest.webmanifest     Phone app manifest (install + Share target)
@@ -93,4 +109,4 @@ You can also open `src/ui/dashboard.html` from any static web server; outside th
 
 ## Privacy
 
-The extension asks only for `storage`, `unlimitedStorage` and `contextMenus`. It has no host permissions, makes no network requests and runs no remote code. Use **Settings → Download backup** to keep a copy of your data. Clearing browser data or removing the extension deletes it.
+The extension asks only for `storage`, `unlimitedStorage`, `contextMenus` and `alarms` (for the background Daraja sync). It has no host permissions and runs no remote code. Its only network requests go to a Daraja relay you set up yourself for a business account; without one it makes no network requests at all. Use **Settings → Download backup** to keep a copy of your data. Clearing browser data or removing the extension deletes it.

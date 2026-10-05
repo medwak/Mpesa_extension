@@ -1,0 +1,23 @@
+# Keep "mpesa" and "safaricom" out of the name: it becomes part of the
+# callback URL, and Safaricom may reject URLs containing those words.
+name = "ledger-relay"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# Create the namespace with:  npx wrangler kv namespace create MPESA_TX
+# then paste the id it prints below.
+[[kv_namespaces]]
+binding = "MPESA_TX"
+id = "PASTE_KV_NAMESPACE_ID_HERE"
+
+[vars]
+# "sandbox" while testing, "production" once Safaricom has approved your app to go live.
+DARAJA_ENV = "sandbox"
+# Your Paybill number, or the shortcode Safaricom gave you for your Till.
+SHORTCODE = "600000"
+
+# Secrets (never put these in this file). Set each one with:
+#   npx wrangler secret put SYNC_TOKEN
+#   npx wrangler secret put HOOK_SECRET
+#   npx wrangler secret put DARAJA_CONSUMER_KEY
+#   npx wrangler secret put DARAJA_CONSUMER_SECRET

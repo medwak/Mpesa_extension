@@ -1,4 +1,7 @@
-import { loadState, saveState, addTransactions, recategorizeAll, defaultState } from '../lib/store.js';
+import { loadState, saveState, addTransactions, importTransactions, recategorizeAll, defaultState, migrate } from '../lib/store.js';
+import { PERSONAL, WALLET_KINDS, walletTxs, getWallet, budgetsFor, addWallet, removeWallet, walletLabel, businessWallets } from '../lib/wallets.js';
+import { payeeDirectory, billStatuses, billAlerts, suggestBills, newBillFromPayee } from '../lib/bills.js';
+import { fetchNewPayments, registerUrls, relayHealth } from '../lib/daraja.js';
 import { parseMessages } from '../lib/parser.js';
 import { importCsv, transactionsToCsv, statementToCsv } from '../lib/csv.js';
 import { importPdf, isPdf, PdfPasswordError } from '../lib/pdf.js';
@@ -41,8 +44,15 @@ async function persist() {
   await saveState(state);
 }
 
+// The account (personal or a business Till/Paybill) being viewed.
+const cur = () => getWallet(state, state.settings.currentWallet);
+const isBiz = () => cur().kind !== 'personal';
+const txs = () => walletTxs(state, cur().id);
+const budgets = () => budgetsFor(state, cur().id);
+const walletBills = () => state.bills.filter((b) => (b.wallet || PERSONAL) === cur().id);
+
 function monthsWithData() {
-  const set = new Set(state.transactions.map((t) => t.date.slice(0, 7)));
+  const set = new Set(txs().map((t) => t.date.slice(0, 7)));
   set.add(thisMonth());
   return [...set].sort().reverse();
 }
@@ -73,7 +83,8 @@ function showTab(name) {
 }
 
 function render(name = currentTab()) {
-  ({ overview: renderOverview, transactions: renderTransactions, import: () => {}, statement: renderStatementControls, budget: renderBudget, settings: renderSettings })[name]?.();
+  renderWalletSelect();
+  ({ overview: renderOverview, transactions: renderTransactions, import: () => {}, statement: renderStatementControls, bills: renderBills, budget: renderBudget, settings: renderSettings })[name]?.();
 }
 function currentTab() {
   return $('.tabs button[aria-selected="true"]')?.dataset.tab || 'overview';
@@ -87,29 +98,32 @@ function renderOverview() {
   const chosen = sel.value && months.includes(sel.value) ? sel.value : months[0];
   sel.innerHTML = months.map((m) => `<option value="${m}" ${m === chosen ? 'selected' : ''}>${fmtMonth(m)}</option>`).join('');
 
-  const empty = state.transactions.length === 0;
+  const empty = txs().length === 0;
   $('#ov-empty').hidden = !empty;
   for (const el of [$('#ov-tiles'), $('#ov-alerts'), ...$$('#tab-overview .grid-2')]) el.hidden = empty;
   if (empty) return;
 
   const { from, to } = monthBounds(chosen);
-  const monthTxs = filterRange(state.transactions, from, to);
+  const monthTxs = filterRange(txs(), from, to);
   const s = summarize(monthTxs, state.categories);
-  const latest = sortByDate(state.transactions).reverse().find((t) => t.balance != null);
+  const latest = sortByDate(txs()).reverse().find((t) => t.balance != null);
 
-  $('#ov-tiles').innerHTML = [
+  const tiles = isBiz() ? businessTiles(monthTxs, s, latest) : [
     ['Income', formatKsh(s.income), `${monthTxs.filter((t) => t.direction === 'in').length} payments in`],
     ['Expenses', formatKsh(s.expenses), `${monthTxs.filter((t) => t.direction === 'out').length} payments out`],
     ['Net (income − expenses)', formatKsh(s.net, { sign: true }), s.income ? `${Math.round(s.savingsRate * 100)}% of income kept` : ''],
     ['Transaction costs', formatKsh(s.fees), s.expenses ? `${((s.fees / s.expenses) * 100).toFixed(1)}% of spending` : ''],
     ['M-Pesa balance', latest ? formatKsh(latest.balance) : '—', latest ? `as of ${fmtDate(latest.date)}` : 'no balance seen yet'],
-  ].map(([l, v, n]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="note">${esc(n)}</div></div>`).join('');
+  ];
+  $('#ov-tiles').innerHTML = tiles.map(([l, v, n]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="note">${esc(n)}</div></div>`).join('');
 
-  const plan = state.budgets[chosen];
-  $('#ov-alerts').innerHTML = plan ? alertHtml(evaluateBudget(plan, state.transactions, { categories: state.categories, today: today() }).alerts.slice(0, 4)) : '';
+  const plan = budgets()[chosen];
+  const budgetAlerts = plan ? evaluateBudget(plan, txs(), { categories: state.categories, today: today() }).alerts.slice(0, 4) : [];
+  const dueAlerts = chosen === thisMonth() ? billAlerts(billStatuses(walletBills(), txs(), today())) : [];
+  $('#ov-alerts').innerHTML = alertHtml([...dueAlerts, ...budgetAlerts]);
 
   // Trend for the 6 months ending at the chosen month.
-  const trend = monthlyTrend(state.transactions, state.categories).filter((r) => r.month <= chosen).slice(-6);
+  const trend = monthlyTrend(txs(), state.categories).filter((r) => r.month <= chosen).slice(-6);
   $('#ov-trend').innerHTML = trendChart(trend);
 
   const spend = s.categories.filter((c) => c.kind === 'expense' && c.total > 0);
@@ -119,6 +133,39 @@ function renderOverview() {
   $('#ov-payees').innerHTML = barList(payees.map((p) => ({ name: p.name, value: p.total, note: `${p.count}×` })));
   const payers = topCounterparties(monthTxs, 'in', 6);
   $('#ov-payers').innerHTML = barList(payers.map((p) => ({ name: p.name, value: p.total, note: `${p.count}×` })), null, 'var(--series-in)');
+
+  $('#ov-payees-title').textContent = isBiz() ? 'Payments out' : 'Top payees';
+  $('#ov-payers-title').textContent = isBiz() ? 'Top customers' : 'Top sources of money';
+  $('#ov-biz').hidden = !isBiz();
+  if (isBiz()) {
+    const received = monthTxs.filter((t) => t.direction === 'in' && t.type !== 'reversal');
+    const byAcc = new Map();
+    const byDay = new Map();
+    for (const t of received) {
+      const acc = t.account || '(no account number)';
+      byAcc.set(acc, (byAcc.get(acc) || 0) + t.amount);
+      const d = t.date.slice(0, 10);
+      byDay.set(d, (byDay.get(d) || 0) + t.amount);
+    }
+    $('#ov-accounts').innerHTML = barList([...byAcc].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, value]) => ({ name, value })), null, 'var(--series-in)');
+    const days = [...byDay].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+    $('#ov-days-sub').textContent = days.length ? `Best day: ${fmtDay([...days].sort((a, b) => b[1] - a[1])[0][0])}` : '';
+    $('#ov-days').innerHTML = barList(days.map(([d, value]) => ({ name: new Date(`${d}T00:00`).toLocaleDateString('en-KE', { weekday: 'short', day: '2-digit', month: 'short' }), value })), null, 'var(--series-in)');
+  }
+}
+
+function businessTiles(monthTxs, s, latest) {
+  const received = monthTxs.filter((t) => t.direction === 'in' && t.type !== 'reversal');
+  const collected = received.reduce((sum, t) => sum + t.amount, 0);
+  const todayTotal = txs().filter((t) => t.direction === 'in' && t.date.startsWith(today())).reduce((sum, t) => sum + t.amount, 0);
+  const settled = monthTxs.filter((t) => t.type === 'settlement').reduce((sum, t) => sum + t.amount, 0);
+  return [
+    ['Collections', formatKsh(collected), `${received.length} customer payment(s)`],
+    ['Average payment', received.length ? formatKsh(Math.round(collected / received.length)) : '—', `${new Set(received.map((t) => t.phone || t.counterparty)).size} customer(s)`],
+    ["Today's takings", formatKsh(todayTotal), new Date().toLocaleDateString('en-KE', { weekday: 'long' })],
+    ['Expenses & charges', formatKsh(s.expenses), `charges ${formatKsh(s.fees)}`],
+    ['Settled to bank', formatKsh(settled), latest ? `balance ${formatKsh(latest.balance)}` : ''],
+  ];
 }
 
 function barList(items, total, color) {
@@ -205,7 +252,7 @@ function renderTransactions() {
 
   const q = $('#tx-search').value.trim().toLowerCase();
   const dir = $('#tx-direction').value;
-  let list = [...state.transactions].reverse();
+  let list = [...txs()].reverse();
   if (mSel.value) list = list.filter((t) => t.date.startsWith(mSel.value));
   if (cSel.value) list = list.filter((t) => t.category === cSel.value);
   if (dir) list = list.filter((t) => t.direction === dir);
@@ -238,7 +285,7 @@ function bindTransactions() {
     tx.category = e.target.value;
     tx.manualCategory = true;
     if (tx.counterparty && !['Fuliza M-PESA', 'Safaricom Airtime'].includes(tx.counterparty)) {
-      const same = state.transactions.filter((t) => t.counterparty === tx.counterparty && t.id !== tx.id && t.category !== tx.category && t.direction === tx.direction);
+      const same = txs().filter((t) => t.counterparty === tx.counterparty && t.id !== tx.id && t.category !== tx.category && t.direction === tx.direction);
       if (confirm(`Always put "${tx.counterparty}" in "${tx.category}"?\n\nThis adds a rule and updates ${same.length} other transaction(s) from them.`)) {
         state.rules.unshift({ pattern: tx.counterparty, category: tx.category });
         for (const t of same) { t.category = tx.category; t.manualCategory = false; }
@@ -278,7 +325,7 @@ function bindTransactions() {
       note: f.get('note').trim(),
       source: 'manual',
     };
-    addTransactions(state, [tx]);
+    addTransactions(state, [tx], cur().id);
     await persist();
     e.target.reset();
     toast('Transaction added');
@@ -288,8 +335,10 @@ function bindTransactions() {
 
 /* ---------------- Import ---------------- */
 
-function importResult(el, { added, duplicates }, failed) {
-  const parts = [`<div class="alert success"><span class="icon">✓</span><span>Imported <strong>${added}</strong> new transaction(s)${duplicates ? `, skipped ${duplicates} already imported` : ''}.</span></div>`];
+function importResult(el, { added, duplicates, movedTo, moved, businessInPersonal }, failed) {
+  const parts = [`<div class="alert success"><span class="icon">✓</span><span>Imported <strong>${added}</strong> new transaction(s) into <strong>${esc(walletLabel(cur()))}</strong>${duplicates ? `, skipped ${duplicates} already imported` : ''}.</span></div>`];
+  if (movedTo && moved) parts.push(alertHtml([{ level: 'info', title: 'Business payments', text: `${moved} customer payment(s) went to your business account "${getWallet(state, movedTo).name}" instead of your personal books.` }]));
+  if (businessInPersonal) parts.push(alertHtml([{ level: 'info', title: 'Business payments', text: `${businessInPersonal} of these look like payments into a Till/Paybill. To keep business money separate, add your Till/Paybill under Settings → Accounts and import them while it is selected.` }]));
   if (failed.length) {
     parts.push(`<div class="alert warning"><span class="icon">!</span><span>${failed.length} item(s) were not recognised as M-Pesa transactions.
       <details><summary>Show</summary><pre style="white-space:pre-wrap;font-size:11px">${esc(failed.slice(0, 20).join('\n\n'))}</pre></details></span></div>`);
@@ -304,7 +353,7 @@ function bindImport() {
       $('#sms-result').innerHTML = alertHtml([{ level: 'warning', text: 'No M-Pesa transactions found in the pasted text.' }]);
       return;
     }
-    const stats = addTransactions(state, transactions);
+    const stats = importTransactions(state, transactions, cur().id);
     await persist();
     importResult($('#sms-result'), stats, failed);
     $('#sms-input').value = '';
@@ -334,7 +383,7 @@ function bindImport() {
     try {
       const { transactions, failed } = await task();
       if (!transactions.length) throw new Error('No transactions were found in this file.');
-      const stats = addTransactions(state, transactions);
+      const stats = importTransactions(state, transactions, cur().id);
       await persist();
       importResult(out, stats, failed);
       pendingPdf = null;
@@ -392,8 +441,8 @@ function applyPreset(p) {
   if (p === '6-months') from = `${ym(shift(-5))}-01`;
   if (p === 'year') from = `${now.getFullYear()}-01-01`;
   if (p === 'all') {
-    from = state.transactions[0]?.date.slice(0, 10) || today();
-    to = state.transactions.at(-1)?.date.slice(0, 10) || today();
+    from = txs()[0]?.date.slice(0, 10) || today();
+    to = txs().at(-1)?.date.slice(0, 10) || today();
   }
   $('#st-from').value = from;
   $('#st-to').value = to;
@@ -403,9 +452,9 @@ function generateStatement() {
   const from = $('#st-from').value;
   const to = $('#st-to').value;
   const openingInput = $('#st-opening').value;
-  const st = buildStatement(state.transactions, { from, to, openingBalance: openingInput === '' ? undefined : parseAmount(openingInput) });
+  const st = buildStatement(txs(), { from, to, openingBalance: openingInput === '' ? undefined : parseAmount(openingInput) });
   lastStatement = st;
-  const periodTxs = filterRange(state.transactions, from, to);
+  const periodTxs = filterRange(txs(), from, to);
   const pl = summarize(periodTxs, state.categories);
 
   const gapNote = st.gaps.length
@@ -415,7 +464,7 @@ function generateStatement() {
   $('#st-output').innerHTML = `<div class="no-print">${gapNote}</div>
   <article class="statement">
     <header>
-      <div><div class="title">M-PESA Statement</div><div class="period">${from ? fmtDay(from) : 'Start'} – ${to ? fmtDay(to) : 'Today'}</div></div>
+      <div><div class="title">M-PESA Statement</div><div class="period"><strong>${esc(walletLabel(cur()))}</strong><br>${from ? fmtDay(from) : 'Start'} – ${to ? fmtDay(to) : 'Today'}</div></div>
       <div class="sub" style="text-align:right">Generated ${new Date().toLocaleString('en-KE')}<br>${st.rows.length} transactions</div>
     </header>
     <div class="totals">
@@ -467,6 +516,229 @@ function bindStatement() {
   });
 }
 
+/* ---------------- Accounts ---------------- */
+
+function renderWalletSelect() {
+  const sel = $('#wallet-select');
+  sel.hidden = state.wallets.length < 2;
+  sel.innerHTML = state.wallets.map((w) => `<option value="${esc(w.id)}" ${w.id === cur().id ? 'selected' : ''}>${esc(walletLabel(w))}</option>`).join('');
+}
+
+async function switchWallet(id) {
+  state.settings.currentWallet = id;
+  await persist();
+  $('#ov-month').value = '';
+  render();
+  autoSync();
+}
+
+// Downloads new Daraja payments for a business account from its relay.
+async function syncWallet(id, { quiet = false } = {}) {
+  const wallet = state.wallets.find((w) => w.id === id);
+  if (!wallet?.relayUrl || !wallet.relayToken) return null;
+  try {
+    const { transactions, cursor } = await fetchNewPayments(wallet);
+    const w = state.wallets.find((x) => x.id === id);
+    const stats = addTransactions(state, transactions, id);
+    Object.assign(w, { lastSyncCursor: cursor, lastSyncAt: new Date().toISOString(), lastSyncError: null });
+    await persist();
+    if (!quiet || stats.added) toast(stats.added ? `${stats.added} new payment(s) synced to ${w.name}` : `${w.name} is up to date`);
+    render();
+    return stats;
+  } catch (err) {
+    const w = state.wallets.find((x) => x.id === id);
+    if (w) {
+      w.lastSyncError = err.message;
+      await persist();
+    }
+    if (!quiet) toast(`Sync failed: ${err.message}`);
+    if (currentTab() === 'settings') renderSettings();
+    return null;
+  }
+}
+
+function autoSync() {
+  const w = cur();
+  if (w.relayUrl && w.relayToken) syncWallet(w.id, { quiet: true });
+}
+
+function renderAccounts() {
+  const open = new Set($$('#accounts-list details[open]').map((d) => d.dataset.id));
+  $('#accounts-list').innerHTML = state.wallets.map((w) => {
+    const count = walletTxs(state, w.id).length;
+    const head = `<div class="head"><div><strong>${esc(w.name)}</strong> <span class="kind">${esc(WALLET_KINDS[w.kind] || w.kind)}${w.shortcode ? ` ${esc(w.shortcode)}` : ''}</span><div class="sub" style="margin:0">${count} transaction(s)</div></div>
+      <div class="row" style="margin:0">${w.id === cur().id ? '<span class="badge paid">Selected</span>' : `<button data-act="select" data-id="${esc(w.id)}">Open</button>`}${w.kind === 'personal' ? '' : `<button class="danger" data-act="delete" data-id="${esc(w.id)}">Remove</button>`}</div></div>`;
+    if (w.kind === 'personal') return `<div class="account-row">${head}</div>`;
+    const status = w.lastSyncError
+      ? `<span class="sync-status">Last sync failed: ${esc(w.lastSyncError)}</span>`
+      : w.lastSyncAt ? `<span class="sync-status">Last synced ${esc(new Date(w.lastSyncAt).toLocaleString('en-KE'))}</span>` : '';
+    return `<div class="account-row">${head}
+      <details data-id="${esc(w.id)}" ${open.has(w.id) ? 'open' : ''}>
+        <summary>Automatic sync with Safaricom Daraja ${w.relayUrl ? '(on)' : '(off)'}</summary>
+        <p class="sub">Needs a Daraja app for this ${w.kind === 'paybill' ? 'Paybill' : 'Till'} and the free relay in the <code>relay/</code> folder (see its README). Payments then appear here automatically.</p>
+        <form class="relay-form form-grid" data-id="${esc(w.id)}">
+          <label>Relay URL <input name="relayUrl" type="url" placeholder="https://ledger-relay.you.workers.dev" value="${esc(w.relayUrl || '')}"></label>
+          <label>Sync token <input name="relayToken" type="password" autocomplete="off" placeholder="SYNC_TOKEN from the relay" value="${esc(w.relayToken || '')}"></label>
+          <div class="span-2 row" style="margin:0">
+            <button class="primary" type="submit">Save</button>
+            <button type="button" data-act="test" data-id="${esc(w.id)}">Test connection</button>
+            <button type="button" data-act="register" data-id="${esc(w.id)}">Register with Safaricom</button>
+            <button type="button" data-act="sync" data-id="${esc(w.id)}">Sync now</button>
+          </div>
+        </form>
+        ${status}
+      </details>
+    </div>`;
+  }).join('');
+}
+
+function bindAccounts() {
+  $('#wallet-select').addEventListener('change', (e) => switchWallet(e.target.value));
+  $('#wallet-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const code = String(f.get('shortcode') || '').trim();
+    if (code && !/^\d{5,7}$/.test(code)) return toast('Till and Paybill numbers have 5 to 7 digits');
+    const w = addWallet(state, { name: f.get('name'), kind: f.get('kind'), shortcode: code });
+    e.target.reset();
+    await switchWallet(w.id);
+    toast(`Added ${w.name}. It is now the selected account.`);
+  });
+  $('#accounts-list').addEventListener('submit', async (e) => {
+    if (!e.target.classList.contains('relay-form')) return;
+    e.preventDefault();
+    const w = state.wallets.find((x) => x.id === e.target.dataset.id);
+    const f = new FormData(e.target);
+    w.relayUrl = String(f.get('relayUrl') || '').trim();
+    w.relayToken = String(f.get('relayToken') || '').trim();
+    await persist();
+    toast('Daraja relay saved');
+  });
+  $('#accounts-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const w = state.wallets.find((x) => x.id === btn.dataset.id);
+    const act = btn.dataset.act;
+    if (act === 'select') return switchWallet(w.id);
+    if (act === 'delete') {
+      const n = walletTxs(state, w.id).length;
+      if (!confirm(`Remove "${w.name}" and its ${n} transaction(s), budgets and bills from this device?`)) return;
+      removeWallet(state, w.id);
+      await persist();
+      render();
+      return;
+    }
+    // Use what is typed in the form even if not saved yet.
+    const form = btn.closest('form');
+    const draft = { ...w, relayUrl: form.relayUrl.value.trim(), relayToken: form.relayToken.value.trim() };
+    btn.disabled = true;
+    try {
+      if (act === 'test') {
+        const h = await relayHealth(draft);
+        toast(`Relay OK · ${h.environment} · shortcode ${h.shortcode || 'not set'}${h.darajaKeysSet ? '' : ' · Daraja keys missing'}`);
+      } else if (act === 'register') {
+        const r = await registerUrls(draft);
+        toast(`Safaricom accepted the callback URLs for ${r.shortcode} (${r.environment})`);
+      } else if (act === 'sync') {
+        Object.assign(w, { relayUrl: draft.relayUrl, relayToken: draft.relayToken });
+        await persist();
+        await syncWallet(w.id);
+      }
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+/* ---------------- Bills ---------------- */
+
+const STATUS_TEXT = { paid: 'Paid', partial: 'Part paid', 'due-soon': 'Due soon', overdue: 'Overdue', upcoming: 'Upcoming', unpaid: 'Not paid yet' };
+
+function renderBills() {
+  const all = txs();
+  const statuses = billStatuses(walletBills(), all, today());
+  $('#bills-alerts').innerHTML = alertHtml(billAlerts(statuses));
+  $('#bills-body').innerHTML = statuses.length ? statuses.map((st) => {
+    const b = st.bill;
+    const where = [b.shortcode ? `#${esc(b.shortcode)}` : '', esc(b.match), b.account ? `Acc ${esc(b.account)}` : ''].filter(Boolean).join(' · ');
+    return `<tr data-id="${esc(b.id)}">
+      <td><strong>${esc(b.label)}</strong></td>
+      <td>${where}</td>
+      <td class="num">${b.amount ? formatKsh(b.amount) : '—'}</td>
+      <td>${b.dueDay ? `Day ${b.dueDay}` : '—'}</td>
+      <td><span class="badge ${st.status}">${STATUS_TEXT[st.status]}${st.paid ? ` · ${formatKsh(st.paid)}` : ''}</span></td>
+      <td>${st.lastPayment ? `${fmtDate(st.lastPayment.date)}<div class="sub" style="margin:0">${formatKsh(st.lastPayment.amount)}</div>` : '—'}</td>
+      <td><button class="icon-btn" data-del-bill="${esc(b.id)}" aria-label="Remove bill">✕</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" class="sub">No bills saved yet. Add one below, or use a suggestion.</td></tr>';
+
+  const dir = payeeDirectory(all);
+  $('#payee-names').innerHTML = dir.map((p) => `<option value="${esc(p.name)}">`).join('');
+
+  const sugg = suggestBills(all, walletBills(), today());
+  $('#bills-suggest-card').hidden = !sugg.length;
+  renderBills.suggestions = sugg;
+  $('#bills-suggest').innerHTML = sugg.map((sg, i) => `<div class="suggestion">
+      <div><strong>${esc(sg.payee.name)}</strong>${sg.payee.account ? ` · Acc ${esc(sg.payee.account)}` : ''}
+      <div class="sub" style="margin:0">Paid in ${sg.months} of the last 3 months · usually ${formatKsh(sg.typicalAmount)} around day ${sg.typicalDay}</div></div>
+      <button class="primary" data-track="${i}">Track as bill</button></div>`).join('');
+
+  const q = $('#payee-search').value.trim().toLowerCase();
+  const shown = dir.filter((p) => !q || `${p.name} ${p.account} ${p.shortcode}`.toLowerCase().includes(q));
+  renderBills.directory = dir;
+  $('#payees-list').innerHTML = shown.length ? shown.map((p) => {
+    const kind = p.type === 'paybill' ? 'Paybill' : 'Till';
+    const idx = dir.indexOf(p);
+    return `<details class="payee"><summary>
+        <span class="pname">${esc(p.name)}</span>
+        <span class="ptotal num">${formatKsh(p.total)}<div class="sub" style="margin:0">${p.count} payment(s)</div></span>
+        <span class="pmeta">${kind}${p.shortcode ? ` ${esc(p.shortcode)}` : ''}${p.account ? ` · Acc ${esc(p.account)}` : ''} · avg ${formatKsh(p.average)} · last ${fmtDate(p.lastDate)}</span>
+      </summary>
+      <table class="data compact"><tbody>${p.history.slice(0, 12).map((t) => `<tr><td>${fmtDate(t.date)}</td><td><code>${esc(t.code || '')}</code></td><td class="num">${formatKsh(t.amount)}</td></tr>`).join('')}</tbody></table>
+      <div class="row"><button data-track-payee="${idx}">Track as a monthly bill</button></div>
+    </details>`;
+  }).join('') : `<p class="sub">${dir.length ? 'No match.' : 'No Paybill or Till payments in this account yet.'}</p>`;
+}
+
+function bindBills() {
+  $('#payee-search').addEventListener('input', renderBills);
+  const save = async (bill) => {
+    state.bills.push({ ...bill, wallet: cur().id });
+    await persist();
+    toast(`Tracking ${bill.label}`);
+    renderBills();
+  };
+  $('#bill-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const dueDay = Number(f.get('dueDay')) || null;
+    await save({
+      id: `bill-${Date.now().toString(36)}`,
+      label: f.get('label').trim(),
+      match: f.get('match').trim(),
+      account: f.get('account').trim(),
+      shortcode: f.get('shortcode').trim(),
+      amount: parseAmount(f.get('amount')) || 0,
+      dueDay: dueDay && dueDay >= 1 && dueDay <= 31 ? dueDay : null,
+    });
+    e.target.reset();
+  });
+  $('#tab-bills').addEventListener('click', async (e) => {
+    const t = e.target.closest('[data-track]');
+    if (t) return save(newBillFromPayee(renderBills.suggestions[Number(t.dataset.track)].payee, renderBills.suggestions[Number(t.dataset.track)]));
+    const tp = e.target.closest('[data-track-payee]');
+    if (tp) return save(newBillFromPayee(renderBills.directory[Number(tp.dataset.trackPayee)]));
+    const del = e.target.closest('[data-del-bill]');
+    if (del && confirm('Stop tracking this bill?')) {
+      state.bills = state.bills.filter((b) => b.id !== del.dataset.delBill);
+      await persist();
+      renderBills();
+    }
+  });
+}
+
 /* ---------------- Budget ---------------- */
 
 function currentPlanMonth() {
@@ -483,14 +755,14 @@ function prevMonthKey(key) {
 
 function renderBudget() {
   const month = currentPlanMonth();
-  const plan = state.budgets[month] || emptyPlan(month);
+  const plan = budgets()[month] || emptyPlan(month);
   const form = $('#bg-form');
   form.expectedIncome.value = plan.expectedIncome ? plan.expectedIncome / 100 : '';
   form.savingsGoal.value = plan.savingsGoal ? plan.savingsGoal / 100 : '';
   const expenseCats = state.categories.filter((c) => c.kind === 'expense');
   $('#bg-limits').innerHTML = expenseCats.map((c) => `<tr><td>${esc(c.name)}</td><td class="num"><input type="number" min="0" step="1" data-cat="${esc(c.name)}" value="${plan.limits[c.name] ? plan.limits[c.name] / 100 : ''}" placeholder="—" aria-label="${esc(c.name)} limit"></td></tr>`).join('');
 
-  const ev = evaluateBudget(plan, state.transactions, { categories: state.categories, today: today() });
+  const ev = evaluateBudget(plan, txs(), { categories: state.categories, today: today() });
   $('#bg-tiles').innerHTML = [
     ['Budgeted spending', formatKsh(ev.totalLimit), plan.expectedIncome ? `of ${formatKsh(ev.expectedIncome)} expected income` : 'set expected income below'],
     ['Spent so far', formatKsh(ev.totalSpent), ev.totalLimit ? `${Math.round((ev.totalSpent / ev.totalLimit) * 100)}% of budget` : ''],
@@ -524,7 +796,7 @@ function bindBudget() {
       const v = parseAmount(input.value);
       if (v) limits[input.dataset.cat] = v;
     }
-    state.budgets[month] = {
+    budgets()[month] = {
       month,
       expectedIncome: parseAmount(form.expectedIncome.value) || 0,
       savingsGoal: parseAmount(form.savingsGoal.value) || 0,
@@ -539,15 +811,15 @@ function bindBudget() {
     const month = currentPlanMonth();
     const prev = prevMonthKey(month);
     const { from, to } = monthBounds(prev);
-    const prevTxs = filterRange(state.transactions, from, to);
-    if (!state.budgets[prev] && !prevTxs.length) {
+    const prevTxs = filterRange(txs(), from, to);
+    if (!budgets()[prev] && !prevTxs.length) {
       toast('No budget or spending found for last month');
       return;
     }
-    if (state.budgets[month] && !confirm('Replace this month\'s budget with one based on last month?')) return;
-    state.budgets[month] = suggestPlan(month, { previousPlan: state.budgets[prev], previousSummary: summarize(prevTxs, state.categories) });
+    if (budgets()[month] && !confirm('Replace this month\'s budget with one based on last month?')) return;
+    budgets()[month] = suggestPlan(month, { previousPlan: budgets()[prev], previousSummary: summarize(prevTxs, state.categories) });
     await persist();
-    toast(state.budgets[prev] ? 'Copied last month\'s budget' : 'Built a budget from last month\'s spending');
+    toast(budgets()[prev] ? 'Copied last month\'s budget' : 'Built a budget from last month\'s spending');
     renderBudget();
   });
 }
@@ -555,6 +827,7 @@ function bindBudget() {
 /* ---------------- Settings ---------------- */
 
 function renderSettings() {
+  renderAccounts();
   $('#rule-form [name=category]').innerHTML = categoryOptions();
   $('#rules-body').innerHTML = state.rules.map((r, i) => `<tr><td><code>${esc(r.pattern)}</code></td><td>→ ${esc(r.category)}</td><td><button class="icon-btn" data-del-rule="${i}" aria-label="Delete rule">✕</button></td></tr>`).join('');
   const used = new Set(state.transactions.map((t) => t.category));
@@ -598,13 +871,13 @@ function bindSettings() {
     const name = state.categories[Number(i)].name;
     state.categories.splice(Number(i), 1);
     state.rules = state.rules.filter((r) => r.category !== name);
-    for (const plan of Object.values(state.budgets)) delete plan.limits[name];
+    for (const all of [state.budgets, ...Object.values(state.walletBudgets || {})]) for (const plan of Object.values(all)) delete plan.limits?.[name];
     await persist();
     renderSettings();
   });
 
   $('#backup-export').addEventListener('click', () => download(`mpesa-ledger-backup-${today()}.json`, JSON.stringify(state, null, 2), 'application/json'));
-  $('#tx-export').addEventListener('click', () => download(`mpesa-transactions-${today()}.csv`, transactionsToCsv(state.transactions), 'text/csv'));
+  $('#tx-export').addEventListener('click', () => download(`mpesa-transactions-${today()}.csv`, transactionsToCsv(txs()), 'text/csv'));
   $('#backup-import').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -612,7 +885,7 @@ function bindSettings() {
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.transactions)) throw new Error('Not an M-Pesa Ledger backup');
       if (!confirm(`Replace current data with the backup (${data.transactions.length} transactions)?`)) return;
-      state = { ...defaultState(), ...data };
+      state = migrate(data);
       await persist();
       toast('Backup restored');
       renderSettings();
@@ -623,7 +896,8 @@ function bindSettings() {
   });
   $('#load-demo').addEventListener('click', async () => {
     if (state.transactions.length && !confirm('Add demo transactions to your existing data? (Delete all data first if you want to keep them apart.)')) return;
-    const stats = addTransactions(state, demoTransactions());
+    const stats = addTransactions(state, demoTransactions(), PERSONAL);
+    state.settings.currentWallet = PERSONAL;
     const month = thisMonth();
     if (!state.budgets[month]) {
       state.budgets[month] = {
@@ -656,6 +930,8 @@ async function init() {
   bindImport();
   bindStatement();
   bindBudget();
+  bindBills();
+  bindAccounts();
   bindSettings();
 
   // Pick up imports made from the popup or the right-click menu in another tab.
@@ -669,6 +945,8 @@ async function init() {
   }
 
   if (!isExtension) setUpWebApp();
+  autoSync();
+  setInterval(autoSync, 5 * 60 * 1000);
 
   const params = new URLSearchParams(location.search);
   if (await importShared(params)) return;
@@ -691,7 +969,7 @@ async function importShared(params) {
     $('#sms-result').innerHTML = alertHtml([{ level: 'warning', title: 'Nothing imported', text: 'The shared text did not contain an M-Pesa confirmation message. It is shown in the box above.' }]);
     return true;
   }
-  const stats = addTransactions(state, transactions);
+  const stats = importTransactions(state, transactions, cur().id);
   await persist();
   importResult($('#sms-result'), stats, failed);
   toast(stats.added ? `Imported ${stats.added} M-Pesa transaction(s)` : 'Already imported');

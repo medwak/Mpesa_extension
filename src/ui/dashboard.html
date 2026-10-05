@@ -14,11 +14,13 @@
 <body>
   <header class="topbar no-print">
     <div class="brand"><span class="logo" aria-hidden="true">M</span> M-Pesa Ledger</div>
+    <select id="wallet-select" class="wallet-select" aria-label="Account" hidden></select>
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
       <button role="tab" data-tab="transactions">Transactions</button>
       <button role="tab" data-tab="import">Import</button>
       <button role="tab" data-tab="statement">Statements</button>
+      <button role="tab" data-tab="bills">Bills</button>
       <button role="tab" data-tab="budget">Budget</button>
       <button role="tab" data-tab="settings">Settings</button>
     </nav>
@@ -50,8 +52,12 @@
         </div>
       </div>
       <div class="grid-2">
-        <div class="card"><h2>Top payees</h2><div id="ov-payees"></div></div>
-        <div class="card"><h2>Top sources of money</h2><div id="ov-payers"></div></div>
+        <div class="card"><h2 id="ov-payees-title">Top payees</h2><div id="ov-payees"></div></div>
+        <div class="card"><h2 id="ov-payers-title">Top sources of money</h2><div id="ov-payers"></div></div>
+      </div>
+      <div class="grid-2" id="ov-biz" hidden>
+        <div class="card"><h2>Collections by account number</h2><p class="sub">What customers typed as the account (house, invoice, student number…)</p><div id="ov-accounts"></div></div>
+        <div class="card"><h2>Collections by day</h2><p class="sub" id="ov-days-sub"></p><div id="ov-days"></div></div>
       </div>
     </section>
 
@@ -150,6 +156,44 @@
       <div id="st-output"></div>
     </section>
 
+    <!-- BILLS -->
+    <section id="tab-bills" class="tab-panel" hidden>
+      <div class="toolbar"><h1>Bills, Paybills &amp; Tills</h1></div>
+      <div id="bills-alerts"></div>
+      <div class="card">
+        <h2>Your regular bills</h2>
+        <p class="sub">Bills you pay every month. Each one is matched to your M-Pesa payments automatically, and you get a reminder when one is due or late.</p>
+        <div class="table-wrap"><table class="data compact">
+          <thead><tr><th>Bill</th><th>Paybill / Till &amp; account</th><th class="num">Usual amount</th><th>Due</th><th>This month</th><th>Last paid</th><th></th></tr></thead>
+          <tbody id="bills-body"></tbody>
+        </table></div>
+        <details class="add-bill">
+          <summary>Add a bill</summary>
+          <form id="bill-form" class="form-grid">
+            <label>Name <input name="label" placeholder="e.g. Electricity tokens" required></label>
+            <label>Paid to (as shown in M-Pesa) <input name="match" list="payee-names" placeholder="e.g. KPLC PREPAID" required></label>
+            <label>Account number (optional) <input name="account" placeholder="e.g. meter or house number"></label>
+            <label>Paybill / Till number (optional) <input name="shortcode" inputmode="numeric" placeholder="e.g. 888880"></label>
+            <label>Usual amount (Ksh) <input name="amount" type="number" min="0" step="1"></label>
+            <label>Due day of the month <input name="dueDay" type="number" min="1" max="31"></label>
+            <div class="span-2"><button class="primary" type="submit">Save bill</button></div>
+          </form>
+          <datalist id="payee-names"></datalist>
+        </details>
+      </div>
+      <div class="card" id="bills-suggest-card">
+        <h2>Looks like a regular bill</h2>
+        <p class="sub">Paybills and Tills you paid in at least two of the last three months.</p>
+        <div id="bills-suggest"></div>
+      </div>
+      <div class="card">
+        <h2>Every Paybill &amp; Till you have paid</h2>
+        <p class="sub">Grouped by business and account number. Open one to see its payment history.</p>
+        <input id="payee-search" type="search" placeholder="Search Paybills and Tills…">
+        <div id="payees-list"></div>
+      </div>
+    </section>
+
     <!-- BUDGET -->
     <section id="tab-budget" class="tab-panel" hidden>
       <div class="toolbar">
@@ -185,6 +229,21 @@
     <!-- SETTINGS -->
     <section id="tab-settings" class="tab-panel" hidden>
       <h1>Settings</h1>
+      <div class="card" id="accounts-card">
+        <h2>Accounts</h2>
+        <p class="sub">Keep your business money apart from your personal M-Pesa. Add each Till, Paybill or Pochi la Biashara you own, then pick it from the account menu at the top. Every account has its own transactions, statements, budgets and bills.</p>
+        <div id="accounts-list"></div>
+        <form id="wallet-form" class="row">
+          <input name="name" placeholder="Business name, e.g. Mama Mboga Shop" required>
+          <select name="kind">
+            <option value="till">Till (Buy Goods)</option>
+            <option value="paybill">Paybill</option>
+            <option value="pochi">Pochi la Biashara</option>
+          </select>
+          <input name="shortcode" inputmode="numeric" placeholder="Till / Paybill number">
+          <button class="primary" type="submit">Add business account</button>
+        </form>
+      </div>
       <div class="grid-2">
         <div class="card">
           <h2>Auto-categorization rules</h2>

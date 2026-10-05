@@ -12,6 +12,7 @@ export const DEFAULT_CATEGORIES = [
   { name: 'Business income', kind: 'income' },
   { name: 'Money received', kind: 'income' },
   { name: 'Refunds & reversals', kind: 'income' },
+  { name: 'Sales & collections', kind: 'income' },
   { name: 'Groceries', kind: 'expense' },
   { name: 'Food & drinks', kind: 'expense' },
   { name: 'Transport & fuel', kind: 'expense' },
@@ -30,12 +31,16 @@ export const DEFAULT_CATEGORIES = [
   { name: 'Church & charity', kind: 'expense' },
   { name: 'Cash withdrawal', kind: 'expense' },
   { name: 'Loan repayment', kind: 'expense' },
+  { name: 'Supplier payments', kind: 'expense' },
+  { name: 'Salaries & wages', kind: 'expense' },
+  { name: 'Business payouts', kind: 'expense' },
   { name: FEES_CATEGORY, kind: 'expense' },
   { name: 'Savings', kind: 'transfer' },
   { name: 'Savings withdrawal', kind: 'transfer' },
   { name: 'Fuliza loan', kind: 'transfer' },
   { name: 'Fuliza repayment', kind: 'transfer' },
   { name: 'Cash deposit', kind: 'transfer' },
+  { name: 'Settlement to bank', kind: 'transfer' },
   { name: UNCATEGORIZED, kind: 'expense' },
 ];
 
@@ -92,6 +97,9 @@ const TYPE_DEFAULTS = {
   savings_out: 'Savings',
   savings_in: 'Savings withdrawal',
   reversal: 'Refunds & reversals',
+  business_received: 'Sales & collections',
+  settlement: 'Settlement to bank',
+  payout: 'Business payouts',
   manual: UNCATEGORIZED,
 };
 
