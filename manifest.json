@@ -23,5 +23,5 @@
     "type": "module"
   },
   "options_page": "src/ui/dashboard.html",
-  "permissions": ["storage", "unlimitedStorage", "contextMenus"]
+  "permissions": ["storage", "unlimitedStorage", "contextMenus", "alarms"]
 }

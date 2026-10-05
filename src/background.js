@@ -1,10 +1,13 @@
-// Service worker: adds a right-click menu so M-Pesa messages selected on any
-// web page (for example Messages for Web) can be imported in one step.
+// Service worker: a right-click menu so M-Pesa messages selected on any web
+// page (for example Messages for Web) can be imported in one step, and a
+// periodic Daraja sync for business accounts that have a relay set up.
 
-import { loadState, saveState, addTransactions } from './lib/store.js';
+import { loadState, saveState, importTransactions, addTransactions } from './lib/store.js';
 import { parseMessages } from './lib/parser.js';
+import { fetchNewPayments } from './lib/daraja.js';
 
 const MENU_ID = 'mpesa-import-selection';
+const SYNC_ALARM = 'daraja-sync';
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -12,7 +15,10 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Import selection into M-Pesa Ledger',
     contexts: ['selection'],
   });
+  chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 15 });
 });
+
+chrome.runtime.onStartup.addListener(() => chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 15 }));
 
 function badge(text, color) {
   chrome.action.setBadgeBackgroundColor({ color });
@@ -28,7 +34,25 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
     return;
   }
   const state = await loadState();
-  const { added } = addTransactions(state, transactions);
+  const { added } = importTransactions(state, transactions, state.settings.currentWallet);
   await saveState(state);
   badge(`+${added}`, '#0d8a3a');
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== SYNC_ALARM) return;
+  const state = await loadState();
+  let total = 0;
+  for (const w of state.wallets) {
+    if (!w.relayUrl || !w.relayToken) continue;
+    try {
+      const { transactions, cursor } = await fetchNewPayments(w);
+      total += addTransactions(state, transactions, w.id).added;
+      Object.assign(w, { lastSyncCursor: cursor, lastSyncAt: new Date().toISOString(), lastSyncError: null });
+    } catch (err) {
+      w.lastSyncError = err.message;
+    }
+  }
+  await saveState(state);
+  if (total) badge(`+${total}`, '#0d8a3a');
 });

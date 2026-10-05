@@ -7,7 +7,9 @@ import { parseAmount } from './money.js';
 const CODE_RE = /\b([A-Z0-9]{10})\s+[Cc]onfirmed/;
 const SPLIT_RE = /(?=\b[A-Z0-9]{10}\s+[Cc]onfirmed)/;
 const DATE_RE = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*at\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
-const BALANCE_RE = /M-PESA\s+(?:account\s+)?balance\s+is(?:\s+now)?\s+Ksh\s?([\d,]+(?:\.\d{1,2})?)/i;
+const BALANCE_RE = /(?:M-PESA|Account|Utility|Working|business|Merchant|Till)\s+(?:account\s+)?balance\s+is(?:\s+now)?\s*:?\s*Ksh\s?([\d,]+(?:\.\d{1,2})?)/i;
+const BUSINESS_BALANCE_RE = /(?:Account|Utility|Working|business|Merchant|Till)\s+(?:account\s+)?balance\s+is/i;
+const ANY_PHONE_RE = /(?:^|\s)((?:\+?254|0)\d[\d*]{7,11})(?=\s|$)/;
 const COST_RE = /Transaction cost,?\s*Ksh\s?([\d,]+(?:\.\d{1,2})?)/i;
 const AMT = 'Ksh\\s?([\\d,]+(?:\\.\\d{1,2})?)';
 
@@ -89,6 +91,26 @@ const MATCHERS = [
     },
   },
   {
+    // Payments into a Till, Paybill or Pochi la Biashara you own.
+    type: 'business_received',
+    test: (t) => /received\s+(?:Ksh[\d,.\s]+\s+)?from/i.test(t) && (BUSINESS_BALANCE_RE.test(t) || /Account (?:Number|No)/i.test(t)),
+    parse(t) {
+      const m =
+        t.match(new RegExp(`${AMT}\\s*(?:has been\\s+)?received from\\s+(.+?)(?=\\s+on\\s+\\d|\\s+(?:Account Number|Account No|Acc\\.? No|for account)|\\.?\\s+New\\s|$)`, 'i')) ||
+        t.match(new RegExp(`received\\s+${AMT}\\s+from\\s+(.+?)(?=\\s+on\\s+\\d|\\s+(?:Account Number|Account No|Acc\\.? No|for account)|\\.?\\s+New\\s|$)`, 'i'));
+      if (!m) return null;
+      let who = clean(m[2]);
+      let phone = '';
+      const ph = who.match(ANY_PHONE_RE);
+      if (ph) {
+        phone = ph[1];
+        who = clean(who.replace(ph[1], ''));
+      }
+      const acc = t.match(/(?:Account Number|Account No\.?|Acc\.? No\.?|for account)\s*:?\s*([A-Za-z0-9#/-]+)/i);
+      return { direction: 'in', amount: parseAmount(m[1]), counterparty: who, phone, account: acc ? acc[1] : '' };
+    },
+  },
+  {
     type: 'received',
     test: /You have received/i,
     parse(t) {
@@ -163,7 +185,7 @@ function fallbackId(text) {
 export function parseMessage(raw) {
   const text = raw.replace(/\s+/g, ' ').trim();
   if (!text) return null;
-  const matcher = MATCHERS.find((m) => m.test.test(text));
+  const matcher = MATCHERS.find((m) => (typeof m.test === 'function' ? m.test(text) : m.test.test(text)));
   if (!matcher) return null;
   const fields = matcher.parse(text);
   if (!fields || !fields.amount) return null;

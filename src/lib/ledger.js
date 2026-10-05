@@ -16,6 +16,9 @@ export const TYPE_LABELS = {
   savings_in: 'From savings (M-Shwari etc.)',
   reversal: 'Reversal',
   manual: 'Manual entry',
+  business_received: 'Customer payment',
+  settlement: 'Settlement to bank',
+  payout: 'Business payment out',
 };
 
 // Fuliza charges are added to the loan, not deducted from the wallet.
@@ -218,6 +221,8 @@ export function describe(tx) {
       return `Customer withdrawal at agent ${who}`;
     case 'deposit':
       return `Deposit of funds at agent ${who}`;
+    case 'business_received':
+      return `Payment from ${who}${tx.account ? ` Acc. ${tx.account}` : ''}`;
     case 'airtime':
       return `Airtime purchase${tx.account ? ` for ${tx.account}` : ''}`;
     default:

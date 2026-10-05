@@ -83,6 +83,10 @@ function normHeader(h) {
 function inferType(details, direction) {
   const d = details.toLowerCase();
   if (/reversal/.test(d)) return 'reversal';
+  // Business (Org Portal) statements.
+  if (direction === 'in' && /pay ?bill online|customer (?:pay ?bill|buy goods|merchant)|pay merchant|buy goods (?:online|payment) from|merchant payment from|c2b|till payment from|pay ?bill from|payment from .* acc/.test(d)) return 'business_received';
+  if (direction === 'out' && /settle|to bank|bank transfer|withdraw(?:al)? (?:of funds )?to bank|organi[sz]ation (?:withdraw|transfer)|working account to/.test(d)) return 'settlement';
+  if (direction === 'out' && /salary payment|business payment to|b2c|disbursement|promotion payment|business to business|b2b|business buy goods|business pay ?bill/.test(d)) return 'payout';
   if (/overdraft|fuliza/.test(d) && direction === 'in') return 'fuliza';
   if (/od loan repayment|fuliza/.test(d)) return 'fuliza_repay';
   if (/m-shwari|mshwari|lock savings|ziidi/.test(d)) return direction === 'in' ? 'savings_in' : 'savings_out';
@@ -96,10 +100,22 @@ function inferType(details, direction) {
   return direction === 'in' ? 'received' : 'sent';
 }
 
-function counterpartyFrom(details) {
-  // "Pay Bill to 888880 - KPLC PREPAID Acc. 123" -> KPLC PREPAID / 123
-  const m = details.match(/\s-\s(.+?)(?:\s+Acc\.\s*(.+))?$/i);
-  if (!m) return { counterparty: details.trim(), account: '' };
+function counterpartyFrom(details, otherParty = '') {
+  // "Pay Bill to 888880 - KPLC PREPAID Acc. 123" -> KPLC PREPAID / 888880 / 123
+  const sc = details.match(/\b(?:to|from|at|Till)\s+(\d{5,7})\s+-\s/i);
+  const shortcode = sc ? sc[1] : '';
+  // Org Portal "Other Party Info": "2547****0111 - MARY ATIENO"
+  if (otherParty) {
+    const parts = otherParty.split(/\s+-\s+/);
+    const name = parts.length > 1 ? parts.slice(1).join(' - ') : parts[0];
+    const phone = parts.length > 1 ? parts[0] : '';
+    const acc = details.match(/\s+Acc\.\s*(.+)$/i);
+    return { counterparty: name.trim(), phone: phone.trim(), account: acc ? acc[1].trim() : '', shortcode };
+  }
+  const source = details;
+  const m = source.match(/\s-\s(.+?)(?:\s+Acc\.\s*(.+))?$/i);
+  const accInDetails = details.match(/\s+Acc\.\s*(.+)$/i);
+  if (!m) return { counterparty: details.trim(), account: accInDetails ? accInDetails[1].trim() : '', shortcode };
   let name = m[1].trim();
   let phone = '';
   const ph = name.match(/^((?:\+?254|0)?\d{2,4}\*+\d{2,4}|\d{9,12})\s+(.*)$/);
@@ -107,7 +123,7 @@ function counterpartyFrom(details) {
     phone = ph[1];
     name = ph[2];
   }
-  return { counterparty: name, phone, account: (m[2] || '').trim() };
+  return { counterparty: name, phone, account: (m[2] || (accInDetails ? accInDetails[1] : '')).trim(), shortcode };
 }
 
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
@@ -144,7 +160,10 @@ export function normDate(s) {
 const HEADER_SYNONYMS = {
   code: ['receiptno', 'receiptnumber', 'receipt', 'transactionid', 'transactionno', 'transactionnumber', 'transactioncode', 'transactionref', 'mpesacode', 'mpesaref', 'mpesareceipt', 'reference', 'referenceno', 'refno', 'ref', 'code', 'id'],
   time: ['completiontime', 'completiondate', 'completedtime', 'completedon', 'date', 'time', 'datetime', 'dateandtime', 'transactiondate', 'transactiontime', 'transactiondatetime', 'initiationtime', 'valuedate'],
-  details: ['details', 'detail', 'description', 'narration', 'narrative', 'particulars', 'transactiondetails', 'transactiontype', 'otherparty', 'remarks'],
+  details: ['details', 'detail', 'description', 'narration', 'narrative', 'particulars', 'transactiondetails', 'remarks'],
+  reason: ['reasontype', 'transactiontype', 'type'],
+  otherParty: ['otherpartyinfo', 'otherparty', 'otherpartyname', 'customer', 'customername', 'sender', 'msisdn'],
+  acct: ['acno', 'accno', 'accountno', 'accountnumber', 'billrefnumber', 'billreference', 'billrefno'],
   status: ['transactionstatus', 'status'],
   paidIn: ['paidin', 'moneyin', 'credit', 'credits', 'cr', 'in', 'deposit', 'deposits', 'amountin', 'receivedamount', 'received'],
   withdrawn: ['withdrawn', 'withdrawal', 'withdrawals', 'paidout', 'moneyout', 'debit', 'debits', 'dr', 'out', 'amountout', 'spent'],
@@ -320,7 +339,7 @@ export function importRows(rows) {
       continue;
     }
     const direction = paidIn ? 'in' : 'out';
-    const rec = { code, date, direction, amount: paidIn || paidOut, balance, details };
+    const rec = { code, date, direction, amount: paidIn || paidOut, balance, details, reason: cell(r, 'reason'), otherParty: cell(r, 'otherParty'), acct: cell(r, 'acct') };
     records.push(rec);
     last = rec;
   }
@@ -335,11 +354,12 @@ export function importRows(rows) {
       id,
       code: rec.code,
       date: rec.date,
-      type: inferType(rec.details, rec.direction),
+      type: inferType(`${rec.reason || ''} ${rec.details}`.trim(), rec.direction),
       direction: rec.direction,
       amount: rec.amount,
       fee: 0,
-      ...counterpartyFrom(rec.details),
+      ...counterpartyFrom(rec.details, rec.otherParty),
+      ...(rec.acct ? { account: rec.acct } : {}),
       balance: rec.balance,
       note: rec.details,
       source: 'statement',

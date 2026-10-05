@@ -1,19 +1,22 @@
 // Service worker for the installable web app (not used by the extension).
 // Caches the app so it opens offline; bump VERSION when files change.
-const VERSION = 'mpesa-ledger-v1';
+const VERSION = 'mpesa-ledger-v2';
 const FILES = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './src/lib/bills.js',
   './src/lib/budget.js',
   './src/lib/categories.js',
   './src/lib/csv.js',
+  './src/lib/daraja.js',
   './src/lib/demo.js',
   './src/lib/ledger.js',
   './src/lib/money.js',
   './src/lib/parser.js',
   './src/lib/pdf.js',
   './src/lib/store.js',
+  './src/lib/wallets.js',
   './src/ui/dashboard.css',
   './src/ui/dashboard.html',
   './src/ui/dashboard.js',
