@@ -209,7 +209,7 @@ export function detectDelimiter(text) {
 
 function sniffWrongFile(text) {
   const head = String(text).slice(0, 8);
-  if (head.startsWith('%PDF')) return 'This is a PDF, not a CSV. Open the PDF statement, export or copy its table to Excel/Google Sheets, then save it as CSV (File → Save as / Download → .csv).';
+  if (head.startsWith('%PDF')) return 'This is a PDF. Upload it with the PDF option so it can be read as a statement.';
   if (head.startsWith('PK')) return 'This looks like an Excel (.xlsx) file. In Excel choose File → Save As → "CSV (Comma delimited)", or in Google Sheets File → Download → CSV, then upload that file.';
   if (/[\u0000-\u0008]/.test(String(text).slice(0, 2000))) return 'This file is not a text CSV. Save it as CSV and try again.';
   return null;
@@ -249,7 +249,11 @@ function importOwnFormat(body, map) {
 export function importCsv(text) {
   const wrong = sniffWrongFile(text);
   if (wrong) throw new Error(wrong);
-  const rows = parseCsv(text, detectDelimiter(text));
+  return importRows(parseCsv(text, detectDelimiter(text)));
+}
+
+// Imports a table given as rows of cells (from a CSV or from a PDF statement).
+export function importRows(rows) {
   if (!rows.length) throw new Error('The file is empty.');
 
   // Own export format (has "direction" and "amount" columns).
