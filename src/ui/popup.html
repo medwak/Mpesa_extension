@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>M-Pesa Ledger</title>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    body { width: 360px; padding: 14px; background: var(--page); }
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .brand { font-weight: 700; display: flex; gap: 8px; align-items: center; }
+    .logo { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font-weight: 800; font-size: 13px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+    .stat span { display: block; font-size: 12px; color: var(--text-2); }
+    .stat strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+    textarea { margin-top: 10px; }
+    .row button { flex: 1; }
+    .alert { font-size: 12px; padding: 6px 10px; }
+    #msg { font-size: 12px; color: var(--text-2); min-height: 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="logo" aria-hidden="true">M</span> M-Pesa Ledger</div>
+    <span class="sub" id="month" style="margin:0"></span>
+  </header>
+  <div class="stats" id="stats"></div>
+  <div id="alerts"></div>
+  <textarea id="paste" rows="4" placeholder="Paste M-Pesa SMS messages here…"></textarea>
+  <div class="row">
+    <button class="primary" id="import">Import</button>
+    <button id="open">Open dashboard</button>
+  </div>
+  <div id="msg"></div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

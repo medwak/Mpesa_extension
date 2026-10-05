@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M-Pesa Ledger</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <header class="topbar no-print">
+    <div class="brand"><span class="logo" aria-hidden="true">M</span> M-Pesa Ledger</div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+      <button role="tab" data-tab="transactions">Transactions</button>
+      <button role="tab" data-tab="import">Import</button>
+      <button role="tab" data-tab="statement">Statements</button>
+      <button role="tab" data-tab="budget">Budget</button>
+      <button role="tab" data-tab="settings">Settings</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section id="tab-overview" class="tab-panel">
+      <div class="toolbar">
+        <h1>Overview</h1>
+        <label>Month <select id="ov-month"></select></label>
+      </div>
+      <div id="ov-empty" class="empty" hidden>
+        <p>No transactions yet. Start by importing your M-Pesa messages or statement.</p>
+        <button class="primary" data-goto="import">Import transactions</button>
+      </div>
+      <div id="ov-tiles" class="tiles"></div>
+      <div id="ov-alerts"></div>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Income vs expenses</h2>
+          <p class="sub">Last 6 months</p>
+          <div id="ov-trend" class="chart"></div>
+        </div>
+        <div class="card">
+          <h2>Spending by category</h2>
+          <p class="sub" id="ov-cat-sub"></p>
+          <div id="ov-cats"></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card"><h2>Top payees</h2><div id="ov-payees"></div></div>
+        <div class="card"><h2>Top sources of money</h2><div id="ov-payers"></div></div>
+      </div>
+    </section>
+
+    <!-- TRANSACTIONS -->
+    <section id="tab-transactions" class="tab-panel" hidden>
+      <div class="toolbar">
+        <h1>Transactions</h1>
+        <input id="tx-search" type="search" placeholder="Search name, code, account…">
+        <select id="tx-month"></select>
+        <select id="tx-category"></select>
+        <select id="tx-direction">
+          <option value="">In &amp; out</option>
+          <option value="in">Money in</option>
+          <option value="out">Money out</option>
+        </select>
+      </div>
+      <details class="card">
+        <summary>Add a transaction manually (cash or missing message)</summary>
+        <form id="manual-form" class="form-grid">
+          <label>Date <input name="date" type="datetime-local" required></label>
+          <label>Direction
+            <select name="direction"><option value="out">Money out</option><option value="in">Money in</option></select>
+          </label>
+          <label>Amount (Ksh) <input name="amount" type="number" step="0.01" min="0.01" required></label>
+          <label>Transaction cost (Ksh) <input name="fee" type="number" step="0.01" min="0" value="0"></label>
+          <label>Name / payee <input name="counterparty" required></label>
+          <label>Category <select name="category"></select></label>
+          <label class="span-2">Note <input name="note"></label>
+          <div class="span-2"><button class="primary" type="submit">Add transaction</button></div>
+        </form>
+      </details>
+      <p class="sub" id="tx-count"></p>
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Date</th><th>Code</th><th>Details</th><th>Category</th><th class="num">Amount</th><th class="num">Cost</th><th class="num">Balance</th><th></th></tr></thead>
+          <tbody id="tx-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- IMPORT -->
+    <section id="tab-import" class="tab-panel" hidden>
+      <h1>Import transactions</h1>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Paste M-Pesa SMS messages</h2>
+          <p class="sub">Paste one or many confirmation messages. Duplicates are skipped automatically, so it is safe to paste the same thread again.</p>
+          <textarea id="sms-input" rows="12" placeholder="TJ51ABCD01 Confirmed.You have received Ksh1,000.00 from …"></textarea>
+          <div class="row">
+            <button class="primary" id="sms-import">Import messages</button>
+            <button id="sms-clear">Clear</button>
+          </div>
+          <div id="sms-result"></div>
+        </div>
+        <div class="card">
+          <h2>Upload a CSV statement</h2>
+          <p class="sub">Accepts the Safaricom M-Pesa statement columns (Receipt No., Completion Time, Details, Transaction Status, Paid In, Withdrawn, Balance) or a CSV exported from this extension.</p>
+          <input id="csv-file" type="file" accept=".csv,text/csv">
+          <div id="csv-result"></div>
+          <h3>Ways to get your M-Pesa data in</h3>
+          <ul class="help">
+            <li><strong>From your phone:</strong> open the M-PESA thread in Messages, select the messages, copy them and send them to yourself (email, WhatsApp Web, notes). Then paste them here.</li>
+            <li><strong>Messages for Web:</strong> open your SMS on the computer (for example Google Messages for web), highlight M-Pesa messages, right-click and choose <em>Import selection into M-Pesa Ledger</em>.</li>
+            <li><strong>Full statement:</strong> request one in the M-PESA app or with <code>*334#</code> → My Account → M-PESA Statement. Safaricom emails a password-protected PDF. Open it, export or copy the table to CSV, and upload it here.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- STATEMENT -->
+    <section id="tab-statement" class="tab-panel" hidden>
+      <div class="toolbar no-print">
+        <h1>Statements</h1>
+        <label>From <input id="st-from" type="date"></label>
+        <label>To <input id="st-to" type="date"></label>
+        <label>Opening balance <input id="st-opening" type="number" step="0.01" placeholder="auto"></label>
+        <button class="primary" id="st-generate">Generate</button>
+        <button id="st-print">Print / Save PDF</button>
+        <button id="st-csv">Download CSV</button>
+      </div>
+      <div class="row no-print presets">
+        <button data-preset="this-month">This month</button>
+        <button data-preset="last-month">Last month</button>
+        <button data-preset="3-months">Last 3 months</button>
+        <button data-preset="6-months">Last 6 months</button>
+        <button data-preset="year">This year</button>
+        <button data-preset="all">All time</button>
+      </div>
+      <div id="st-output"></div>
+    </section>
+
+    <!-- BUDGET -->
+    <section id="tab-budget" class="tab-panel" hidden>
+      <div class="toolbar">
+        <h1>Budget</h1>
+        <label>Month <input id="bg-month" type="month"></label>
+        <button id="bg-suggest">Start from last month</button>
+      </div>
+      <div id="bg-tiles" class="tiles"></div>
+      <div id="bg-alerts"></div>
+      <div class="grid-2 budget-grid">
+        <div class="card">
+          <h2>Plan</h2>
+          <form id="bg-form">
+            <div class="form-grid">
+              <label>Expected income (Ksh) <input name="expectedIncome" type="number" step="1" min="0"></label>
+              <label>Savings goal (Ksh) <input name="savingsGoal" type="number" step="1" min="0"></label>
+            </div>
+            <table class="data compact">
+              <thead><tr><th>Category</th><th class="num">Monthly limit (Ksh)</th></tr></thead>
+              <tbody id="bg-limits"></tbody>
+            </table>
+            <div class="row"><button class="primary" type="submit">Save budget</button><span id="bg-saved" class="sub"></span></div>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Progress</h2>
+          <p class="sub" id="bg-days"></p>
+          <div id="bg-progress"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="tab-settings" class="tab-panel" hidden>
+      <h1>Settings</h1>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Auto-categorization rules</h2>
+          <p class="sub">If the payee or account contains the text, the transaction gets the category. Rules run top to bottom.</p>
+          <form id="rule-form" class="row">
+            <input name="pattern" placeholder="e.g. NAIVAS" required>
+            <select name="category"></select>
+            <button class="primary" type="submit">Add rule</button>
+          </form>
+          <div class="table-wrap short"><table class="data compact"><tbody id="rules-body"></tbody></table></div>
+          <button id="rules-apply">Re-apply rules to all transactions</button>
+          <p class="sub">Categories you set by hand are kept.</p>
+        </div>
+        <div class="card">
+          <h2>Categories</h2>
+          <form id="cat-form" class="row">
+            <input name="name" placeholder="New category" required>
+            <select name="kind">
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+              <option value="transfer">Transfer (not income or expense)</option>
+            </select>
+            <button class="primary" type="submit">Add</button>
+          </form>
+          <div class="table-wrap short"><table class="data compact"><tbody id="cats-body"></tbody></table></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Your data</h2>
+        <p class="sub">Everything is stored only in this browser. Nothing is uploaded anywhere. Back up regularly.</p>
+        <div class="row">
+          <button id="backup-export">Download backup (JSON)</button>
+          <label class="button">Restore backup <input id="backup-import" type="file" accept=".json,application/json" hidden></label>
+          <button id="tx-export">Export transactions (CSV)</button>
+          <button id="load-demo">Load demo data</button>
+          <button id="wipe" class="danger">Delete all data</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
