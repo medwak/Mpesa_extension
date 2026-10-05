@@ -2,6 +2,7 @@ import { loadState, saveState, addTransactions, importTransactions, recategorize
 import { PERSONAL, WALLET_KINDS, walletTxs, getWallet, budgetsFor, addWallet, removeWallet, walletLabel, businessWallets } from '../lib/wallets.js';
 import { payeeDirectory, billStatuses, billAlerts, suggestBills, newBillFromPayee } from '../lib/bills.js';
 import { fetchNewPayments, registerUrls, relayHealth } from '../lib/daraja.js';
+import { importStatement, deleteStatement, statementsFor, combineStatements } from '../lib/statements.js';
 import { parseMessages } from '../lib/parser.js';
 import { importCsv, transactionsToCsv, statementToCsv } from '../lib/csv.js';
 import { importPdf, isPdf, PdfPasswordError } from '../lib/pdf.js';
@@ -370,64 +371,148 @@ function bindImport() {
   });
   $('#sms-clear').addEventListener('click', () => { $('#sms-input').value = ''; $('#sms-result').innerHTML = ''; });
 
-  let pendingPdf = null;
+  createStatementUploader({
+    input: $('#csv-file'),
+    unlock: $('#pdf-unlock'),
+    password: $('#pdf-password'),
+    hint: $('#pdf-hint'),
+    result: $('#csv-result'),
+  });
+}
+
+// Reads PDF/CSV statement files one after another, asking for the password
+// of each locked PDF, and saves each file as an entry in the statements list.
+function createStatementUploader({ input, unlock, password, hint, result, nameEl, skip, onDone = () => {} }) {
+  let queue = [];
+  let current = null; // { file, buffer }
+  const outputs = [];
   const showUnlock = (show) => {
-    $('#pdf-unlock').hidden = !show;
-    $('#pdf-hint').hidden = !show;
-    if (show) $('#pdf-password').focus();
+    unlock.hidden = !show;
+    hint.hidden = !show;
+    if (nameEl) nameEl.textContent = show && current ? `${current.file.name}:` : '';
+    if (show) password.focus();
   };
 
-  async function runImport(task) {
-    const out = $('#csv-result');
-    out.innerHTML = '<p class="sub">Reading statement…</p>';
-    try {
-      const { transactions, failed } = await task();
-      if (!transactions.length) throw new Error('No transactions were found in this file.');
-      const stats = importTransactions(state, transactions, cur().id);
-      await persist();
-      importResult(out, stats, failed);
-      pendingPdf = null;
-      showUnlock(false);
-    } catch (err) {
-      if (err instanceof PdfPasswordError) {
-        showUnlock(true);
-        out.innerHTML = err.wrongPassword ? alertHtml([{ level: 'danger', title: 'Wrong password', text: 'Check the code in the Safaricom SMS and try again.' }]) : '';
-        return;
-      }
-      pendingPdf = null;
-      showUnlock(false);
-      out.innerHTML = alertHtml([{ level: 'danger', title: 'Import failed', text: err.message }]);
-    }
+  async function readCurrent(pass) {
+    const { file, buffer } = current;
+    const pdf = isPdf(buffer);
+    const parsed = pdf ? await importPdf(buffer.slice(0), pass) : importCsv(new TextDecoder().decode(buffer));
+    if (!parsed.transactions.length) throw new Error('No transactions were found in this file.');
+    const stats = importStatement(state, parsed.transactions, cur().id, { name: file.name, kind: pdf ? 'pdf' : 'csv', ...(parsed.meta || {}) });
+    await persist();
+    return { stats, failed: parsed.failed };
   }
 
-  $('#csv-file').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    const buffer = await file.arrayBuffer();
-    if (isPdf(buffer)) {
-      pendingPdf = buffer;
-      $('#pdf-password').value = '';
-      await runImport(() => importPdf(buffer.slice(0)));
-    } else {
-      pendingPdf = null;
+  async function next(pass) {
+    while (current || queue.length) {
+      if (!current) {
+        const file = queue.shift();
+        current = { file, buffer: await file.arrayBuffer() };
+        password.value = '';
+      }
+      result.innerHTML = `<p class="sub">Reading ${esc(current.file.name)}…</p>${outputs.join('')}`;
+      try {
+        const { stats, failed } = await readCurrent(pass);
+        const st = stats.statement;
+        const el = document.createElement('div');
+        importResult(el, stats, failed);
+        outputs.push(`<p class="sub" style="margin:8px 0 0"><strong>${esc(current.file.name)}</strong> · saved as a statement for ${fmtDay(st.from)} – ${fmtDay(st.to)}</p>${el.innerHTML}`);
+      } catch (err) {
+        if (err instanceof PdfPasswordError) {
+          showUnlock(true);
+          result.innerHTML = (err.wrongPassword ? alertHtml([{ level: 'danger', title: 'Wrong password', text: `Check the code in the Safaricom SMS for ${current.file.name} and try again.` }]) : '') + outputs.join('');
+          return; // wait for the password form
+        }
+        outputs.push(alertHtml([{ level: 'danger', title: `${current.file.name}: import failed`, text: err.message }]));
+      }
+      current = null;
+      pass = undefined;
       showUnlock(false);
-      await runImport(async () => importCsv(new TextDecoder().decode(buffer)));
     }
-  });
+    result.innerHTML = outputs.join('');
+    onDone();
+  }
 
-  $('#pdf-unlock').addEventListener('submit', async (e) => {
+  input.addEventListener('change', async (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    if (!files.length) return;
+    outputs.length = 0;
+    queue.push(...files);
+    if (!current) await next();
+  });
+  unlock.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!pendingPdf) return;
-    await runImport(() => importPdf(pendingPdf.slice(0), $('#pdf-password').value));
+    if (current) await next(password.value);
+  });
+  skip?.addEventListener('click', async () => {
+    if (!current) return;
+    outputs.push(alertHtml([{ level: 'info', title: 'Skipped', text: current.file.name }]));
+    current = null;
+    showUnlock(false);
+    await next();
   });
 }
 
 /* ---------------- Statement ---------------- */
 
+let statementView = () => generateStatement();
+const libSelected = new Set();
+
 function renderStatementControls() {
+  renderLibrary();
+  const years = [...new Set([...txs().map((t) => t.date.slice(0, 4)), today().slice(0, 4)])].sort();
+  for (const id of ['#st-yfrom', '#st-yto']) {
+    const sel = $(id);
+    const keep = sel.value;
+    sel.innerHTML = years.map((y) => `<option>${y}</option>`).join('');
+    sel.value = keep && years.includes(keep) ? keep : id === '#st-yfrom' ? years[0] : years.at(-1);
+  }
   if (!$('#st-from').value && !$('#st-to').value) applyPreset('this-month');
-  generateStatement();
+  statementView();
+}
+
+function renderLibrary() {
+  const list = statementsFor(state, cur().id);
+  for (const id of [...libSelected]) if (!list.some((x) => x.id === id)) libSelected.delete(id);
+  $('#lib-body').innerHTML = list.length ? list.map((st) => `<tr data-id="${esc(st.id)}">
+      <td><input type="checkbox" class="lib-check" ${libSelected.has(st.id) ? 'checked' : ''} aria-label="Select ${esc(st.name)}"></td>
+      <td><div class="file">${esc(st.name)}</div><div class="meta">${st.kind.toUpperCase()}</div></td>
+      <td>${fmtDay(st.from)} – ${fmtDay(st.to)}</td>
+      <td class="num">${st.count}</td>
+      <td class="num">${formatKsh(st.openingBalance)}</td>
+      <td class="num">${formatKsh(st.closingBalance)}</td>
+      <td>${new Date(st.importedAt).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+      <td><div class="row" style="margin:0;flex-wrap:nowrap"><button data-lib="view">View</button><button class="danger" data-lib="delete">Delete</button></div></td>
+    </tr>`).join('') : '<tr><td colspan="8" class="sub">No statements uploaded for this account yet. Add the PDF Safaricom emailed you, or a CSV statement.</td></tr>';
+  $('#lib-all').checked = list.length > 0 && libSelected.size === list.length;
+  const n = libSelected.size;
+  $('#lib-combine').disabled = n < 1;
+  $('#lib-combine').textContent = n > 1 ? `Combine ${n} statements` : 'View selected';
+  $('#lib-delete-selected').disabled = n < 1;
+  if (n) {
+    const c = combineStatements(state, [...libSelected]);
+    $('#lib-selinfo').textContent = `${n} selected · ${fmtDay(c.from)} – ${fmtDay(c.to)}${c.gaps.length ? ` · ${c.gaps.length} gap(s) not covered` : ''}`;
+  } else {
+    $('#lib-selinfo').textContent = '';
+  }
+}
+
+function showStatements(ids) {
+  const c = combineStatements(state, ids);
+  statementView = () => showStatements(ids.filter((id) => state.statements.some((x) => x.id === id)));
+  $('#st-from').value = c.from;
+  $('#st-to').value = c.to;
+  const names = c.statements.map((x) => x.name);
+  renderStatement({
+    source: c.txs,
+    from: c.from,
+    to: c.to,
+    title: ids.length > 1 ? 'Combined M-PESA Statement' : 'M-PESA Statement',
+    note: `${ids.length > 1 ? `Combined from ${ids.length} uploaded statements` : 'Uploaded statement'}: ${names.join(', ')}`,
+    extraAlerts: c.gaps.map((g) => ({ level: 'warning', title: 'Missing period', text: `None of the chosen statements covers ${fmtDay(g.from)} – ${fmtDay(g.to)}. Add that statement to make the combined statement complete.` })),
+  });
+  $('#st-output').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function applyPreset(p) {
@@ -449,24 +534,28 @@ function applyPreset(p) {
 }
 
 function generateStatement() {
-  const from = $('#st-from').value;
-  const to = $('#st-to').value;
+  statementView = generateStatement;
   const openingInput = $('#st-opening').value;
-  const st = buildStatement(txs(), { from, to, openingBalance: openingInput === '' ? undefined : parseAmount(openingInput) });
+  renderStatement({ source: txs(), from: $('#st-from').value, to: $('#st-to').value, opening: openingInput === '' ? undefined : parseAmount(openingInput) });
+}
+
+function renderStatement({ source, from, to, opening, title = 'M-PESA Statement', note = '', extraAlerts = [] }) {
+  const st = buildStatement(source, { from, to, openingBalance: opening });
   lastStatement = st;
-  const periodTxs = filterRange(txs(), from, to);
+  const periodTxs = filterRange(source, from, to);
   const pl = summarize(periodTxs, state.categories);
 
   const gapNote = st.gaps.length
     ? alertHtml([{ level: 'warning', text: `${st.gaps.length} place(s) where the balance in the message does not match the running total. A transaction is probably missing before: ${st.gaps.slice(0, 5).map((g) => `${fmtDate(g.date)} (${formatKsh(g.diff, { sign: true })})`).join(', ')}${st.gaps.length > 5 ? '…' : ''}. Import the missing messages or a full statement to reconcile.` }])
     : st.rows.length ? alertHtml([{ level: 'success', text: 'All balances reconcile with your M-Pesa messages.' }]) : '';
 
-  $('#st-output').innerHTML = `<div class="no-print">${gapNote}</div>
+  $('#st-output').innerHTML = `<div class="no-print">${alertHtml(extraAlerts)}${gapNote}</div>
   <article class="statement">
     <header>
-      <div><div class="title">M-PESA Statement</div><div class="period"><strong>${esc(walletLabel(cur()))}</strong><br>${from ? fmtDay(from) : 'Start'} – ${to ? fmtDay(to) : 'Today'}</div></div>
+      <div><div class="title">${esc(title)}</div><div class="period"><strong>${esc(walletLabel(cur()))}</strong><br>${from ? fmtDay(from) : 'Start'} – ${to ? fmtDay(to) : 'Today'}</div></div>
       <div class="sub" style="text-align:right">Generated ${new Date().toLocaleString('en-KE')}<br>${st.rows.length} transactions</div>
     </header>
+    ${note ? `<p class="sources">${esc(note)}</p>` : ''}
     <div class="totals">
       <div><span>Opening balance</span><strong>${formatKsh(st.openingBalance)}</strong></div>
       <div><span>Total paid in</span><strong>${formatKsh(st.totalIn)}</strong></div>
@@ -509,10 +598,84 @@ function download(name, content, type) {
 function bindStatement() {
   $('#st-generate').addEventListener('click', generateStatement);
   for (const b of $$('[data-preset]')) b.addEventListener('click', () => { applyPreset(b.dataset.preset); generateStatement(); });
-  $('#st-print').addEventListener('click', () => { generateStatement(); window.print(); });
-  $('#st-csv').addEventListener('click', () => {
+  $('#st-months').addEventListener('click', () => {
+    let [a, b] = [$('#st-mfrom').value, $('#st-mto').value || $('#st-mfrom').value];
+    if (!a) return toast('Pick the first month');
+    if (b < a) [a, b] = [b, a];
+    $('#st-from').value = `${a}-01`;
+    $('#st-to').value = monthBounds(b).to;
     generateStatement();
+  });
+  $('#st-years').addEventListener('click', () => {
+    let [a, b] = [$('#st-yfrom').value, $('#st-yto').value];
+    if (b < a) [a, b] = [b, a];
+    $('#st-from').value = `${a}-01-01`;
+    $('#st-to').value = `${b}-12-31`;
+    generateStatement();
+  });
+  $('#st-print').addEventListener('click', () => { statementView(); window.print(); });
+  $('#st-csv').addEventListener('click', () => {
+    statementView();
     download(`mpesa-statement_${$('#st-from').value}_${$('#st-to').value}.csv`, statementToCsv(lastStatement), 'text/csv');
+  });
+
+  createStatementUploader({
+    input: $('#lib-file'),
+    unlock: $('#lib-unlock'),
+    password: $('#lib-password'),
+    hint: $('#lib-hint'),
+    result: $('#lib-result'),
+    nameEl: $('#lib-unlock-name'),
+    skip: $('#lib-skip'),
+    onDone: () => renderStatementControls(),
+  });
+
+  const removeStatements = async (ids) => {
+    let removed = 0;
+    let kept = 0;
+    for (const id of ids) {
+      const r = deleteStatement(state, id);
+      removed += r.removed;
+      kept += r.kept;
+      libSelected.delete(id);
+    }
+    await persist();
+    statementView = generateStatement;
+    toast(`Deleted ${ids.length} statement(s): ${removed} transaction(s) removed${kept ? `, ${kept} kept (also in another statement or from SMS)` : ''}`);
+    renderStatementControls();
+  };
+
+  $('#lib-body').addEventListener('change', (e) => {
+    if (!e.target.classList.contains('lib-check')) return;
+    const id = e.target.closest('tr').dataset.id;
+    if (e.target.checked) libSelected.add(id);
+    else libSelected.delete(id);
+    renderLibrary();
+  });
+  $('#lib-all').addEventListener('change', (e) => {
+    libSelected.clear();
+    if (e.target.checked) for (const st of statementsFor(state, cur().id)) libSelected.add(st.id);
+    renderLibrary();
+  });
+  $('#lib-body').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-lib]');
+    if (!btn) return;
+    const id = btn.closest('tr').dataset.id;
+    const st = state.statements.find((x) => x.id === id);
+    if (btn.dataset.lib === 'view') return showStatements([id]);
+    if (confirm(`Delete the statement "${st.name}" (${fmtDay(st.from)} – ${fmtDay(st.to)})?\n\nIts transactions are removed from your books, except any that are also in another statement or came from SMS or manual entries.`)) {
+      await removeStatements([id]);
+    }
+  });
+  $('#lib-combine').addEventListener('click', () => {
+    const ids = statementsFor(state, cur().id).map((x) => x.id).filter((id) => libSelected.has(id));
+    if (ids.length) showStatements(ids);
+  });
+  $('#lib-delete-selected').addEventListener('click', async () => {
+    const ids = [...libSelected];
+    if (ids.length && confirm(`Delete ${ids.length} statement(s)?\n\nTheir transactions are removed from your books, except any that are also in another statement or came from SMS or manual entries.`)) {
+      await removeStatements(ids);
+    }
   });
 }
 
@@ -528,6 +691,8 @@ async function switchWallet(id) {
   state.settings.currentWallet = id;
   await persist();
   $('#ov-month').value = '';
+  statementView = generateStatement;
+  libSelected.clear();
   render();
   autoSync();
 }

@@ -2,7 +2,7 @@
 // pdf.js extracts positioned text; we rebuild the "Detailed Statement" table
 // into rows and hand them to the same importer the CSV upload uses.
 
-import { importRows } from './csv.js';
+import { importRows, normDate } from './csv.js';
 
 export const STATEMENT_HEADER = ['Receipt No.', 'Completion Time', 'Details', 'Transaction Status', 'Paid In', 'Withdrawn', 'Balance'];
 
@@ -206,11 +206,21 @@ export async function extractPdfItems(data, password) {
 export async function importPdf(data, password) {
   const items = await extractPdfItems(data, password);
   if (!items.length) throw new Error('No text found in this PDF. It may be a scanned image; use the M-Pesa statement Safaricom emailed you.');
-  const rows = linesToRows(groupLines(items));
+  const lines = groupLines(items);
+  const rows = linesToRows(lines);
   if (rows.length <= 1) {
     throw new Error('This PDF does not look like an M-Pesa statement: no "Receipt No. … Balance" transaction table was found.');
   }
-  return importRows(rows);
+  return { ...importRows(rows), meta: statementPeriod(lines.map((l) => lineText(splitWords(l.items)))) };
+}
+
+// Finds the printed "Statement Period: 01 Sep 2026 - 30 Sep 2026".
+export function statementPeriod(textLines) {
+  const DATE = /(\d{1,2}[ -][A-Za-z]{3,9}[ -,]+\d{4}|\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/g;
+  const line = textLines.find((t) => /period/i.test(t) && (t.match(DATE) || []).length >= 2);
+  if (!line) return {};
+  const [a, b] = line.match(DATE).map((d) => normDate(d)?.slice(0, 10)).filter(Boolean);
+  return a && b ? { from: a < b ? a : b, to: a < b ? b : a } : {};
 }
 
 export function isPdf(buffer) {
