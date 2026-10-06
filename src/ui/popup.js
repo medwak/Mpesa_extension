@@ -3,7 +3,7 @@ import { parseMessages } from '../lib/parser.js';
 import { summarize, filterRange, monthBounds, sortByDate } from '../lib/ledger.js';
 import { evaluateBudget } from '../lib/budget.js';
 import { billStatuses, billAlerts } from '../lib/bills.js';
-import { walletTxs, getWallet, budgetsFor, walletLabel, PERSONAL } from '../lib/wallets.js';
+import { walletTxs, walletIdsOf, getWallet, budgetsFor, walletLabel, PERSONAL, ALL_LINES, LINE_KINDS } from '../lib/wallets.js';
 import { formatKsh } from '../lib/money.js';
 
 const $ = (s) => document.querySelector(s);
@@ -22,7 +22,7 @@ async function render() {
   $('#month').textContent = new Date(y, m - 1, 1).toLocaleString('en-KE', { month: 'long', year: 'numeric' });
   $('#wallet').textContent = state.wallets.length > 1 ? walletLabel(wallet) : '';
 
-  const biz = wallet.kind !== 'personal';
+  const biz = !LINE_KINDS.has(wallet.kind);
   $('#stats').innerHTML = [
     [biz ? 'Collections' : 'Income', formatKsh(s.income)],
     ['Expenses', formatKsh(s.expenses)],
@@ -30,7 +30,8 @@ async function render() {
     [biz ? 'Balance' : 'M-Pesa balance', latest ? formatKsh(latest.balance) : '—'],
   ].map(([l, v]) => `<div class="stat"><span>${l}</span><strong>${v}</strong></div>`).join('');
 
-  const alerts = billAlerts(billStatuses(state.bills.filter((b) => (b.wallet || PERSONAL) === wallet.id), txs, today));
+  const ids = new Set(walletIdsOf(state, wallet.id));
+  const alerts = billAlerts(billStatuses(state.bills.filter((b) => ids.has(b.wallet || PERSONAL)), txs, today));
   const plan = budgetsFor(state, wallet.id)[month];
   if (plan) alerts.push(...evaluateBudget(plan, txs, { categories: state.categories }).alerts.filter((a) => a.level !== 'info'));
   $('#alerts').innerHTML = alerts
@@ -46,7 +47,8 @@ $('#import').addEventListener('click', async () => {
     return;
   }
   const state = await loadState();
-  const { added, duplicates } = importTransactions(state, transactions, state.settings.currentWallet);
+  const target = state.settings.currentWallet === ALL_LINES ? PERSONAL : state.settings.currentWallet;
+  const { added, duplicates } = importTransactions(state, transactions, target);
   await saveState(state);
   $('#paste').value = '';
   $('#msg').textContent = `Imported ${added}${duplicates ? `, ${duplicates} already saved` : ''}${failed.length ? `, ${failed.length} not recognised` : ''}.`;

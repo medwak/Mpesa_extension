@@ -6,6 +6,8 @@ A desktop browser extension (Chrome, Edge, Brave and other Chromium browsers) an
 - **Your uploaded statements.** Every PDF or CSV statement you upload is kept as its own entry, showing its period, number of transactions and opening/closing balances. Switch any of them off (**disable**) to leave its transactions out of your totals, budgets, bills and statements without losing it, and switch it back on any time; or **delete** it completely: its transactions go too, except ones also in another statement or that came from SMS or manual entries. Your uploads are also listed on the Import tab, and each transaction shows which statement it came from. Tick several to combine them into one statement (consecutive months or whole years). Overlapping statements are counted once, and you are warned about any period none of them covers.
 - **M-Pesa statements.** Generate a statement for any period, with opening and closing balances, a running balance, a summary by transaction type and an income & expenditure table. Print it, save it as PDF or download it as CSV. The statement also checks every balance against the balance in your messages and tells you when a transaction is missing.
 - **Bills, Paybills and Tills.** A directory of every Paybill and Till you have paid, with each one's payment history. Track regular bills (rent, KPLC, water, internet) with a usual amount and due day, see whether each is paid this month, and get reminders when one is due or overdue. Regular bills are suggested automatically.
+- **People.** Everyone you sent money to or received money from, grouped by phone number, with name, total sent, total received, transaction costs, number of transactions, first and last date and full history. Search by name or number, filter by month and sort. Masked statement numbers (0712****678) are matched to the full number from your SMS.
+- **Several M-Pesa lines (dual SIM).** Add each of your own numbers as a line and view them one at a time or together as *All my M-Pesa lines*. On the Import tab choose which line to import into; statements go to the line whose number they print, and SMS go to the line whose running balance they continue.
 - **Business accounts.** Add the Till, Paybill or Pochi la Biashara you own as a separate account, so business money never mixes with personal money. It shows collections, today's takings, top customers and collections per account number, with its own statements and budgets. Payments can sync automatically through Safaricom's Daraja API.
 - **Budget planning.** Set expected income, a savings goal and monthly limits per category. Track progress with "on track", "spending fast", "almost used up" and "over budget" warnings, with a daily allowance for the rest of the month. You can start a new month from last month's plan or from last month's actual spending.
 
@@ -90,7 +92,8 @@ src/lib/categories.js    Default categories and auto-categorization rules
 src/lib/ledger.js        Summaries, trends, statement builder and reconciliation
 src/lib/budget.js        Budget plans, progress and alerts
 src/lib/bills.js         Paybill/Till directory, saved bills, reminders and suggestions
-src/lib/wallets.js       Personal and business accounts
+src/lib/wallets.js       Accounts: your lines, all-lines view and businesses
+src/lib/people.js        People directory and phone number matching
 src/lib/daraja.js        Daraja C2B sync with the relay
 relay/                   Cloudflare Worker that receives Daraja payments (see relay/README.md)
 src/lib/store.js         Storage (chrome.storage, localStorage fallback)

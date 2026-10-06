@@ -1,5 +1,6 @@
 import { loadState, saveState, addTransactions, importTransactions, recategorizeAll, defaultState, migrate } from '../lib/store.js';
-import { PERSONAL, WALLET_KINDS, walletTxs, getWallet, budgetsFor, addWallet, removeWallet, walletLabel, businessWallets } from '../lib/wallets.js';
+import { PERSONAL, ALL_LINES, WALLET_KINDS, LINE_KINDS, walletTxs, walletIdsOf, getWallet, budgetsFor, addWallet, removeWallet, walletLabel, businessWallets, personalLines } from '../lib/wallets.js';
+import { peopleDirectory, searchPeople, PEOPLE_SORTS, normalizePhone } from '../lib/people.js';
 import { payeeDirectory, billStatuses, billAlerts, suggestBills, newBillFromPayee } from '../lib/bills.js';
 import { fetchNewPayments, registerUrls, relayHealth } from '../lib/daraja.js';
 import { importStatement, deleteStatement, statementsFor, combineStatements, setStatementEnabled } from '../lib/statements.js';
@@ -47,10 +48,19 @@ async function persist() {
 
 // The account (personal or a business Till/Paybill) being viewed.
 const cur = () => getWallet(state, state.settings.currentWallet);
-const isBiz = () => cur().kind !== 'personal';
+const isBiz = () => !LINE_KINDS.has(cur().kind);
 const txs = () => walletTxs(state, cur().id);
 const budgets = () => budgetsFor(state, cur().id);
-const walletBills = () => state.bills.filter((b) => (b.wallet || PERSONAL) === cur().id);
+const walletBills = () => {
+  const ids = new Set(walletIdsOf(state, cur().id));
+  return state.bills.filter((b) => ids.has(b.wallet || PERSONAL));
+};
+// Where imports go: the account chosen on the Import tab, or the selected one.
+function importTarget() {
+  const pick = $('#import-target')?.value;
+  if (pick && state.wallets.some((w) => w.id === pick)) return pick;
+  return cur().virtual ? PERSONAL : cur().id;
+}
 
 function monthsWithData() {
   const set = new Set(txs().map((t) => t.date.slice(0, 7)));
@@ -85,7 +95,7 @@ function showTab(name) {
 
 function render(name = currentTab()) {
   renderWalletSelect();
-  ({ overview: renderOverview, transactions: renderTransactions, import: renderImportLibrary, statement: renderStatementControls, bills: renderBills, budget: renderBudget, settings: renderSettings })[name]?.();
+  ({ overview: renderOverview, transactions: renderTransactions, people: renderPeople, import: renderImportLibrary, statement: renderStatementControls, bills: renderBills, budget: renderBudget, settings: renderSettings })[name]?.();
 }
 function currentTab() {
   return $('.tabs button[aria-selected="true"]')?.dataset.tab || 'overview';
@@ -332,7 +342,7 @@ function bindTransactions() {
       note: f.get('note').trim(),
       source: 'manual',
     };
-    addTransactions(state, [tx], cur().id);
+    addTransactions(state, [tx], importTarget());
     await persist();
     e.target.reset();
     toast('Transaction added');
@@ -342,8 +352,11 @@ function bindTransactions() {
 
 /* ---------------- Import ---------------- */
 
-function importResult(el, { added, duplicates, movedTo, moved, businessInPersonal }, failed) {
-  const parts = [`<div class="alert success"><span class="icon">✓</span><span>Imported <strong>${added}</strong> new transaction(s) into <strong>${esc(walletLabel(cur()))}</strong>${duplicates ? `, skipped ${duplicates} already imported` : ''}.</span></div>`];
+function importResult(el, { added, duplicates, movedTo, moved, businessInPersonal, lineMovedTo, statement }, failed) {
+  const into = getWallet(state, lineMovedTo || statement?.wallet || importTarget());
+  const parts = [`<div class="alert success"><span class="icon">✓</span><span>Imported <strong>${added}</strong> new transaction(s) into <strong>${esc(walletLabel(into))}</strong>${duplicates ? `, skipped ${duplicates} already imported` : ''}.</span></div>`];
+  if (lineMovedTo) parts.push(alertHtml([{ level: 'info', title: 'Your other line', text: `These messages continue the balance of ${walletLabel(getWallet(state, lineMovedTo))}, so they were added there instead of ${walletLabel(getWallet(state, importTarget()))}.` }]));
+  if (statement && statement.wallet !== importTarget() && !movedTo) parts.push(alertHtml([{ level: 'info', title: 'Matched to your line', text: `This statement ${statement.phone ? `is for ${statement.phone}` : 'continues the balance of another line'}, so it was added to ${walletLabel(getWallet(state, statement.wallet))}.` }]));
   if (movedTo && moved) parts.push(alertHtml([{ level: 'info', title: 'Business payments', text: `${moved} customer payment(s) went to your business account "${getWallet(state, movedTo).name}" instead of your personal books.` }]));
   if (businessInPersonal) parts.push(alertHtml([{ level: 'info', title: 'Business payments', text: `${businessInPersonal} of these look like payments into a Till/Paybill. To keep business money separate, add your Till/Paybill under Settings → Accounts and import them while it is selected.` }]));
   if (failed.length) {
@@ -360,7 +373,7 @@ function bindImport() {
       $('#sms-result').innerHTML = alertHtml([{ level: 'warning', text: 'No M-Pesa transactions found in the pasted text.' }]);
       return;
     }
-    const stats = importTransactions(state, transactions, cur().id);
+    const stats = importTransactions(state, transactions, importTarget());
     await persist();
     importResult($('#sms-result'), stats, failed);
     $('#sms-input').value = '';
@@ -404,7 +417,7 @@ function createStatementUploader({ input, unlock, password, hint, result, nameEl
     const pdf = isPdf(buffer);
     const parsed = pdf ? await importPdf(buffer.slice(0), pass) : importCsv(new TextDecoder().decode(buffer));
     if (!parsed.transactions.length) throw new Error('No transactions were found in this file.');
-    const stats = importStatement(state, parsed.transactions, cur().id, { name: file.name, kind: pdf ? 'pdf' : 'csv', ...(parsed.meta || {}) });
+    const stats = importStatement(state, parsed.transactions, importTarget(), { name: file.name, kind: pdf ? 'pdf' : 'csv', ...(parsed.meta || {}) });
     await persist();
     return { stats, failed: parsed.failed };
   }
@@ -716,12 +729,63 @@ function bindStatement() {
   });
 }
 
+/* ---------------- People ---------------- */
+
+function renderPeople() {
+  const mSel = $('#people-month');
+  const keep = mSel.value;
+  mSel.innerHTML = `<option value="">All time</option>` + monthsWithData().map((m) => `<option value="${m}" ${m === keep ? 'selected' : ''}>${fmtMonth(m)}</option>`).join('');
+  const scope = mSel.value ? txs().filter((t) => t.date.startsWith(mSel.value)) : txs();
+  const all = peopleDirectory(scope);
+  const list = searchPeople(all, $('#people-search').value).sort(PEOPLE_SORTS[$('#people-sort').value] || PEOPLE_SORTS.recent);
+  const sent = list.reduce((s, p) => s + p.sentTotal, 0);
+  const received = list.reduce((s, p) => s + p.receivedTotal, 0);
+  $('#people-count').textContent = `${list.length} ${list.length === 1 ? 'person' : 'people'} · sent ${formatKsh(sent)} · received ${formatKsh(received)}`;
+  renderPeople.list = list;
+  $('#people-list').innerHTML = list.length ? list.slice(0, 300).map((p, i) => `<details class="payee person">
+      <summary>
+        <span class="pname">${esc(p.name)}</span>
+        <span class="ptotal num">${p.sentTotal ? `<span>−${formatKsh(p.sentTotal).replace('Ksh ', '')}</span>` : ''}${p.receivedTotal ? `<span class="in">+${formatKsh(p.receivedTotal).replace('Ksh ', '')}</span>` : ''}<div class="sub" style="margin:0">${p.count} transaction(s)</div></span>
+        <span class="pmeta">${p.phones.length ? esc(p.phones.join(' · ')) : 'no number'} · last ${fmtDate(p.last)}</span>
+      </summary>
+      <div class="person-stats">
+        <div><span>Sent</span><strong>${formatKsh(p.sentTotal)}</strong><em>${p.sentCount}×${p.fees ? ` · costs ${formatKsh(p.fees)}` : ''}</em></div>
+        <div><span>Received</span><strong>${formatKsh(p.receivedTotal)}</strong><em>${p.receivedCount}×</em></div>
+        <div><span>Net</span><strong>${formatKsh(p.net, { sign: true })}</strong><em>since ${fmtDay(p.first.slice(0, 10))}</em></div>
+      </div>
+      ${p.names.length > 1 ? `<p class="sub" style="margin:4px 0">Also shown as: ${esc(p.names.filter((n) => n !== p.name).join(', '))}</p>` : ''}
+      <div class="table-wrap" style="border:none"><table class="data compact"><tbody>${p.history.slice(0, 50).map((t) => `<tr><td>${fmtDate(t.date)}</td><td><code>${esc(t.code || '')}</code></td><td>${esc(TYPE_LABELS[t.type] || t.type)}${t.phone ? ` · ${esc(t.phone)}` : ''}</td><td class="num ${t.direction === 'in' ? 'in' : ''}">${t.direction === 'in' ? '+' : '−'}${formatKsh(t.amount).replace('Ksh ', '')}</td></tr>`).join('')}</tbody></table></div>
+      <div class="row"><button data-person-tx="${i}">Show in Transactions</button></div>
+    </details>`).join('') : `<p class="sub">${all.length ? 'No one matches that search.' : 'No money sent to or received from people in this account yet.'}</p>`;
+}
+
+function bindPeople() {
+  for (const id of ['#people-search', '#people-month', '#people-sort']) $(id).addEventListener('input', renderPeople);
+  $('#people-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-person-tx]');
+    if (!b) return;
+    const p = renderPeople.list[Number(b.dataset.personTx)];
+    $('#tx-search').value = p.phones.find((x) => !x.includes('*')) || p.phones[0] || p.name;
+    $('#tx-month').value = '';
+    showTab('transactions');
+  });
+}
+
 /* ---------------- Accounts ---------------- */
 
 function renderWalletSelect() {
   const sel = $('#wallet-select');
   sel.hidden = state.wallets.length < 2;
-  sel.innerHTML = state.wallets.map((w) => `<option value="${esc(w.id)}" ${w.id === cur().id ? 'selected' : ''}>${esc(walletLabel(w))}</option>`).join('');
+  const options = personalLines(state).length > 1 ? [getWallet(state, ALL_LINES), ...state.wallets] : state.wallets;
+  sel.innerHTML = options.map((w) => `<option value="${esc(w.id)}" ${w.id === cur().id ? 'selected' : ''}>${esc(walletLabel(w))}</option>`).join('');
+  // Import tab: choose which account (line) the next import goes to.
+  const imp = $('#import-target');
+  if (imp) {
+    const keep = imp.value;
+    imp.innerHTML = state.wallets.map((w) => `<option value="${esc(w.id)}">${esc(walletLabel(w))}</option>`).join('');
+    imp.value = state.wallets.some((w) => w.id === keep) && keep ? keep : (cur().virtual ? PERSONAL : cur().id);
+    $('#import-target-row').hidden = state.wallets.length < 2;
+  }
 }
 
 async function switchWallet(id) {
@@ -770,7 +834,14 @@ function renderAccounts() {
     const count = walletTxs(state, w.id).length;
     const head = `<div class="head"><div><strong>${esc(w.name)}</strong> <span class="kind">${esc(WALLET_KINDS[w.kind] || w.kind)}${w.shortcode ? ` ${esc(w.shortcode)}` : ''}</span><div class="sub" style="margin:0">${count} transaction(s)</div></div>
       <div class="row" style="margin:0">${w.id === cur().id ? '<span class="badge paid">Selected</span>' : `<button data-act="select" data-id="${esc(w.id)}">Open</button>`}${w.kind === 'personal' ? '' : `<button class="danger" data-act="delete" data-id="${esc(w.id)}">Remove</button>`}</div></div>`;
-    if (w.kind === 'personal') return `<div class="account-row">${head}</div>`;
+    if (LINE_KINDS.has(w.kind)) {
+      return `<div class="account-row">${head}
+        <form class="line-form row" data-id="${esc(w.id)}" style="margin:8px 0 0">
+          <label class="sub" style="margin:0">My number on this line <input name="phone" inputmode="tel" placeholder="e.g. 0712 345 678" value="${esc(w.phone || '')}"></label>
+          <input name="name" aria-label="Line name" value="${esc(w.name)}">
+          <button type="submit">Save</button>
+        </form></div>`;
+    }
     const status = w.lastSyncError
       ? `<span class="sync-status">Last sync failed: ${esc(w.lastSyncError)}</span>`
       : w.lastSyncAt ? `<span class="sync-status">Last synced ${esc(new Date(w.lastSyncAt).toLocaleString('en-KE'))}</span>` : '';
@@ -800,13 +871,35 @@ function bindAccounts() {
     e.preventDefault();
     const f = new FormData(e.target);
     const code = String(f.get('shortcode') || '').trim();
-    if (code && !/^\d{5,7}$/.test(code)) return toast('Till and Paybill numbers have 5 to 7 digits');
-    const w = addWallet(state, { name: f.get('name'), kind: f.get('kind'), shortcode: code });
+    const kind = f.get('kind');
+    if (kind === 'line') {
+      if (!/^0[17]\d{8}$/.test(normalizePhone(code))) return toast('Enter the phone number of this M-Pesa line, e.g. 0712 345 678');
+      if (state.wallets.some((x) => x.phone && normalizePhone(x.phone) === normalizePhone(code))) return toast('That number is already one of your accounts');
+    } else if (code && !/^\d{5,7}$/.test(code)) return toast('Till and Paybill numbers have 5 to 7 digits');
+    const w = addWallet(state, { name: f.get('name'), kind, shortcode: code, phone: code });
     e.target.reset();
     await switchWallet(w.id);
     toast(`Added ${w.name}. It is now the selected account.`);
   });
+  $('#wallet-form [name=kind]').addEventListener('change', (e) => {
+    const line = e.target.value === 'line';
+    $('#wallet-form [name=shortcode]').placeholder = line ? 'Phone number of this line' : 'Till / Paybill number';
+    $('#wallet-form [name=name]').placeholder = line ? 'Name, e.g. Safaricom line 2' : 'Business name, e.g. Mama Mboga Shop';
+  });
   $('#accounts-list').addEventListener('submit', async (e) => {
+    if (e.target.classList.contains('line-form')) {
+      e.preventDefault();
+      const w = state.wallets.find((x) => x.id === e.target.dataset.id);
+      const fields = e.target.elements;
+      const phone = normalizePhone(fields.phone.value);
+      if (phone && !/^0[17]\d{8}$/.test(phone)) return toast('That does not look like a Safaricom number');
+      w.phone = phone;
+      w.name = fields.name.value.trim() || w.name;
+      await persist();
+      toast('Saved');
+      render();
+      return;
+    }
     if (!e.target.classList.contains('relay-form')) return;
     e.preventDefault();
     const w = state.wallets.find((x) => x.id === e.target.dataset.id);
@@ -907,7 +1000,7 @@ function renderBills() {
 function bindBills() {
   $('#payee-search').addEventListener('input', renderBills);
   const save = async (bill) => {
-    state.bills.push({ ...bill, wallet: cur().id });
+    state.bills.push({ ...bill, wallet: cur().virtual ? PERSONAL : cur().id });
     await persist();
     toast(`Tracking ${bill.label}`);
     renderBills();
@@ -1133,6 +1226,7 @@ async function init() {
   bindStatement();
   bindBudget();
   bindBills();
+  bindPeople();
   bindAccounts();
   bindSettings();
 
@@ -1171,7 +1265,7 @@ async function importShared(params) {
     $('#sms-result').innerHTML = alertHtml([{ level: 'warning', title: 'Nothing imported', text: 'The shared text did not contain an M-Pesa confirmation message. It is shown in the box above.' }]);
     return true;
   }
-  const stats = importTransactions(state, transactions, cur().id);
+  const stats = importTransactions(state, transactions, importTarget());
   await persist();
   importResult($('#sms-result'), stats, failed);
   toast(stats.added ? `Imported ${stats.added} M-Pesa transaction(s)` : 'Already imported');
@@ -1224,7 +1318,7 @@ async function runInstallChecks() {
   return checks;
 }
 
-export const APP_VERSION = '2026.10.05-8';
+export const APP_VERSION = '2026.10.06-1';
 
 function setUpWebApp() {
   $('#install-card').hidden = false;

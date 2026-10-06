@@ -4,8 +4,8 @@
 // relay you set up yourself for a business account.
 
 import { DEFAULT_CATEGORIES, DEFAULT_RULES, categorize } from './categories.js';
-import { mergeTransactions } from './ledger.js';
-import { DEFAULT_WALLETS, PERSONAL, BUSINESS_TYPES, businessWallets } from './wallets.js';
+import { mergeTransactions, walletEffect } from './ledger.js';
+import { DEFAULT_WALLETS, PERSONAL, ALL_LINES, BUSINESS_TYPES, businessWallets, personalLines, isLine, getWallet, walletOf } from './wallets.js';
 
 const KEY = 'mpesaLedger';
 const ADDED_IN_V2 = ['Sales & collections', 'Supplier payments', 'Salaries & wages', 'Business payouts', 'Settlement to bank'];
@@ -31,7 +31,9 @@ export function migrate(saved) {
   const state = { ...defaultState(), ...(saved || {}) };
   if (!state.wallets?.some((w) => w.id === PERSONAL)) state.wallets = [...structuredClone(DEFAULT_WALLETS), ...(state.wallets || [])];
   state.settings = { currentWallet: PERSONAL, ...(state.settings || {}) };
-  if (!state.wallets.some((w) => w.id === state.settings.currentWallet)) state.settings.currentWallet = PERSONAL;
+  const cw = state.settings.currentWallet;
+  const linesView = cw === ALL_LINES && state.wallets.filter((w) => w.kind === 'personal' || w.kind === 'line').length > 1;
+  if (!linesView && !state.wallets.some((w) => w.id === cw)) state.settings.currentWallet = PERSONAL;
   state.walletBudgets ||= {};
   state.bills ||= [];
   state.statements ||= [];
@@ -93,19 +95,49 @@ export function prepareTransactions(state, incoming, walletId = PERSONAL) {
   });
 }
 
-// Imports into the chosen account, except that business payments imported
-// while the personal account is selected go to your business account when
-// you have exactly one. Returns counts plus how many were moved.
+// With several M-Pesa lines (dual SIM), finds the line whose running balance
+// these messages continue. Only switches away from the chosen line when the
+// chosen line matches none of them and another line matches at least one.
+export function lineByBalance(state, incoming, walletId) {
+  const lines = personalLines(state);
+  if (lines.length < 2 || !lines.some((w) => w.id === walletId)) return walletId;
+  const withBalance = incoming.filter((t) => t.balance != null);
+  if (!withBalance.length) return walletId;
+  const score = (lineId) => {
+    const own = state.transactions.filter((t) => walletOf(t) === lineId && t.balance != null).sort((a, b) => (a.date < b.date ? -1 : 1));
+    let hits = 0;
+    for (const tx of withBalance) {
+      const prev = own.filter((t) => t.date < tx.date).at(-1);
+      if (prev && prev.balance + walletEffect(tx) === tx.balance) hits++;
+    }
+    return hits;
+  };
+  const scores = lines.map((l) => ({ id: l.id, hits: score(l.id) }));
+  const mine = scores.find((x) => x.id === walletId).hits;
+  const best = [...scores].sort((a, b) => b.hits - a.hits)[0];
+  return mine === 0 && best.hits > 0 ? best.id : walletId;
+}
+
+// Imports into the chosen account, except that:
+//  - with several lines, messages go to the line whose balance they continue;
+//  - business payments imported into one of your lines go to your business
+//    account when you have exactly one.
+// Returns counts plus what was moved where.
 export function importTransactions(state, incoming, walletId = PERSONAL) {
+  const chosen = lineByBalance(state, incoming, walletId);
+  const lineMovedTo = chosen !== walletId ? chosen : null;
+  walletId = chosen;
   const biz = businessWallets(state);
-  const route = walletId === PERSONAL && biz.length === 1 ? biz[0].id : null;
+  const toLine = isLine(getWallet(state, walletId));
+  const route = toLine && biz.length === 1 ? biz[0].id : null;
   const isBiz = (t) => BUSINESS_TYPES.has(t.type);
   const moved = route ? incoming.filter(isBiz) : [];
   const stay = route ? incoming.filter((t) => !isBiz(t)) : incoming;
   const a = addTransactions(state, stay, walletId);
   const b = moved.length ? addTransactions(state, moved, route) : { added: 0, duplicates: 0 };
-  const businessInPersonal = walletId === PERSONAL && !route ? incoming.filter(isBiz).length : 0;
+  const businessInPersonal = toLine && !route ? incoming.filter(isBiz).length : 0;
   return {
+    lineMovedTo,
     added: a.added + b.added,
     duplicates: a.duplicates + b.duplicates,
     movedTo: moved.length ? route : null,

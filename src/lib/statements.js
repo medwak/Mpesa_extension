@@ -7,8 +7,8 @@
 // ones also in another statement, or that came from an SMS, Daraja or a
 // manual entry, are kept.
 
-import { prepareTransactions } from './store.js';
-import { BUSINESS_TYPES, PERSONAL, businessWallets, walletOf } from './wallets.js';
+import { prepareTransactions, lineByBalance } from './store.js';
+import { BUSINESS_TYPES, PERSONAL, businessWallets, walletOf, walletIdsOf, isLine, getWallet, lineForPhone } from './wallets.js';
 import { buildStatement, sortByDate } from './ledger.js';
 
 const FROM_STATEMENTS = new Set(['statement', 'csv']);
@@ -34,9 +34,13 @@ export function importStatement(state, incoming, walletId, meta = {}) {
   if (!incoming.length) throw new Error('No transactions were found in this statement.');
   // A business statement imported while the personal account is selected
   // goes to your business account when you have exactly one.
+  // The statement's printed mobile number picks your matching line; failing
+  // that, the line whose running balance it continues.
+  const byPhone = meta.phone ? lineForPhone(state, meta.phone) : null;
+  const lineChoice = isLine(getWallet(state, walletId)) ? byPhone?.id || lineByBalance(state, incoming, walletId) : walletId;
   const biz = businessWallets(state);
   const bizShare = incoming.filter((t) => BUSINESS_TYPES.has(t.type)).length / incoming.length;
-  const target = walletId === PERSONAL && biz.length === 1 && bizShare > 0.5 ? biz[0].id : walletId;
+  const target = isLine(getWallet(state, lineChoice)) && biz.length === 1 && bizShare > 0.5 ? biz[0].id : lineChoice;
 
   const id = newId();
   const prepared = prepareTransactions(state, incoming, target);
@@ -68,13 +72,15 @@ export function importStatement(state, incoming, walletId, meta = {}) {
     openingBalance: summary.openingBalance,
     closingBalance: summary.closingBalance,
     importedAt: new Date().toISOString(),
+    ...(meta.phone ? { phone: meta.phone } : {}),
   };
   state.statements.push(record);
   return { added, duplicates, statement: record, movedTo: target !== walletId ? target : null, moved: target !== walletId ? added : 0 };
 }
 
 export function statementsFor(state, walletId) {
-  return state.statements.filter((s) => (s.wallet || PERSONAL) === walletId).sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  const ids = new Set(walletIdsOf(state, walletId));
+  return state.statements.filter((s) => ids.has(s.wallet || PERSONAL)).sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
 }
 
 export function deleteStatement(state, statementId) {
