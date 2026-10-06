@@ -18,6 +18,7 @@
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
       <button role="tab" data-tab="transactions">Transactions</button>
+      <button role="tab" data-tab="people">People</button>
       <button role="tab" data-tab="import">Import</button>
       <button role="tab" data-tab="statement">Statements</button>
       <button role="tab" data-tab="bills">Bills</button>
@@ -98,9 +99,32 @@
       </div>
     </section>
 
+    <!-- PEOPLE -->
+    <section id="tab-people" class="tab-panel" hidden>
+      <div class="toolbar">
+        <h1>People</h1>
+        <input id="people-search" type="search" placeholder="Search name or phone number…" aria-label="Search people">
+        <select id="people-month" aria-label="Period"></select>
+        <select id="people-sort" aria-label="Sort">
+          <option value="recent">Most recent</option>
+          <option value="sent">Most sent to</option>
+          <option value="received">Most received from</option>
+          <option value="count">Most transactions</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </div>
+      <p class="sub">Everyone you sent money to or received money from, grouped by phone number. Masked numbers from statements are matched to the full number in your SMS where possible. Open a person to see every transaction.</p>
+      <p class="sub" id="people-count"></p>
+      <div class="card" id="people-list"></div>
+    </section>
+
     <!-- IMPORT -->
     <section id="tab-import" class="tab-panel" hidden>
       <h1>Import transactions</h1>
+      <div class="row" id="import-target-row" hidden>
+        <label class="import-target">Import into <select id="import-target" aria-label="Import into"></select></label>
+        <span class="sub" style="margin:0">With two lines, statements go to the line whose number they show, and SMS go to the line whose balance they continue.</span>
+      </div>
       <div class="grid-2">
         <div class="card">
           <h2>Paste M-Pesa SMS messages</h2>
@@ -292,11 +316,12 @@
       <h1>Settings</h1>
       <div class="card" id="accounts-card">
         <h2>Accounts</h2>
-        <p class="sub">Keep your business money apart from your personal M-Pesa. Add each Till, Paybill or Pochi la Biashara you own, then pick it from the account menu at the top. Every account has its own transactions, statements, budgets and bills.</p>
+        <p class="sub">Keep your money apart by line and business. Add your other M-Pesa numbers (dual SIM) and each Till, Paybill or Pochi la Biashara you own, then pick one from the account menu at the top, or choose <strong>All my M-Pesa lines</strong> to see your lines together. Every account has its own transactions, statements, budgets and bills.</p>
         <div id="accounts-list"></div>
         <form id="wallet-form" class="row">
           <input name="name" placeholder="Business name, e.g. Mama Mboga Shop" required>
           <select name="kind">
+            <option value="line">Another M-Pesa line (my number)</option>
             <option value="till">Till (Buy Goods)</option>
             <option value="paybill">Paybill</option>
             <option value="pochi">Pochi la Biashara</option>

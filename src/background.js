@@ -5,6 +5,7 @@
 import { loadState, saveState, importTransactions, addTransactions } from './lib/store.js';
 import { parseMessages } from './lib/parser.js';
 import { fetchNewPayments } from './lib/daraja.js';
+import { ALL_LINES, PERSONAL } from './lib/wallets.js';
 
 const MENU_ID = 'mpesa-import-selection';
 const SYNC_ALARM = 'daraja-sync';
@@ -34,7 +35,8 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
     return;
   }
   const state = await loadState();
-  const { added } = importTransactions(state, transactions, state.settings.currentWallet);
+  const target = state.settings.currentWallet === ALL_LINES ? PERSONAL : state.settings.currentWallet;
+  const { added } = importTransactions(state, transactions, target);
   await saveState(state);
   badge(`+${added}`, '#0d8a3a');
 });

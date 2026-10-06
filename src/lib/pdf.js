@@ -211,7 +211,18 @@ export async function importPdf(data, password) {
   if (rows.length <= 1) {
     throw new Error('This PDF does not look like an M-Pesa statement: no "Receipt No. … Balance" transaction table was found.');
   }
-  return { ...importRows(rows), meta: statementPeriod(lines.map((l) => lineText(splitWords(l.items)))) };
+  const text = lines.map((l) => lineText(splitWords(l.items)));
+  return { ...importRows(rows), meta: { ...statementPeriod(text), ...statementPhone(text) } };
+}
+
+// Finds the printed "Mobile Number: 0712345678" (Safaricom prints the
+// statement owner's number in the header).
+export function statementPhone(textLines) {
+  for (const t of textLines.slice(0, 40)) {
+    const m = t.match(/(?:Mobile|Phone|MSISDN)\s*(?:Number|No\.?)?\s*:?\s*(\+?\d[\d\s*]{8,15}\d)/i);
+    if (m) return { phone: m[1].replace(/\s+/g, '') };
+  }
+  return {};
 }
 
 // Finds the printed "Statement Period: 01 Sep 2026 - 30 Sep 2026".
