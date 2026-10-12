@@ -1,0 +1,14 @@
+{
+  "appId": "com.mpesaledger.app",
+  "appName": "M-Pesa Ledger",
+  "webDir": "dist/mpesa-ledger-phone-app",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_ledger",
+      "iconColor": "#0D8A3A"
+    }
+  }
+}

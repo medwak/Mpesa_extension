@@ -174,3 +174,12 @@ table.data td .switch input { width: 36px; height: 20px; padding: 0; }
 .person-stats em { display: block; font-style: normal; font-size: 11px; color: var(--muted); }
 #people-search { min-width: 220px; }
 .import-target { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+
+/* Android app */
+.notify-form { display: grid; gap: 10px; margin: 8px 0 12px; }
+.notify-form .check { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; }
+.notify-form .check span { line-height: 2; }
+.notify-form select { padding: 4px 8px; }
+.native-app .topbar { padding-top: max(10px, env(safe-area-inset-top)); }
+input[type="checkbox"] { width: auto; padding: 0; flex: none; }
+.notify-form .check input[type="checkbox"] { width: 18px; height: 18px; margin: 6px 0 0; }

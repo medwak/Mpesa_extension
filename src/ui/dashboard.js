@@ -42,7 +42,19 @@ function toast(msg) {
   toast.timer = setTimeout(() => (t.hidden = true), 3500);
 }
 
+let native = null; // src/ui/native.js inside the Android app
+let notifyTimer = null;
+
 async function persist() {
+  await saveState(state);
+  // Keep phone reminders in step with bills, budgets and new transactions.
+  if (native) {
+    clearTimeout(notifyTimer);
+    notifyTimer = setTimeout(() => native.refreshNotifications(state, saveStateOnly).catch(() => {}), 1500);
+  }
+}
+
+async function saveStateOnly() {
   await saveState(state);
 }
 
@@ -632,6 +644,10 @@ function fmtDay(d) {
 }
 
 function download(name, content, type) {
+  if (native) {
+    native.saveFile(name, content).catch((err) => toast(`Could not save: ${err.message || err}`));
+    return;
+  }
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = Object.assign(document.createElement('a'), { href: url, download: name });
   document.body.append(a);
@@ -658,7 +674,11 @@ function bindStatement() {
     $('#st-to').value = `${b}-12-31`;
     generateStatement();
   });
-  $('#st-print').addEventListener('click', () => { statementView(); window.print(); });
+  $('#st-print').addEventListener('click', () => {
+    statementView();
+    if (native) native.printPage(`M-Pesa statement ${$('#st-from').value} to ${$('#st-to').value}`).catch((err) => toast(err.message || String(err)));
+    else window.print();
+  });
   $('#st-csv').addEventListener('click', () => {
     statementView();
     download(`mpesa-statement_${$('#st-from').value}_${$('#st-to').value}.csv`, statementToCsv(lastStatement), 'text/csv');
@@ -1123,6 +1143,7 @@ function bindBudget() {
 
 function renderSettings() {
   renderAccounts();
+  renderNotificationSettings();
   $('#rule-form [name=category]').innerHTML = categoryOptions();
   $('#rules-body').innerHTML = state.rules.map((r, i) => `<tr><td><code>${esc(r.pattern)}</code></td><td>→ ${esc(r.category)}</td><td><button class="icon-btn" data-del-rule="${i}" aria-label="Delete rule">✕</button></td></tr>`).join('');
   const used = new Set(state.transactions.map((t) => t.category));
@@ -1240,7 +1261,8 @@ async function init() {
     });
   }
 
-  if (!isExtension) setUpWebApp();
+  if (isNativeApp) await setUpNativeApp();
+  else if (!isExtension) setUpWebApp();
   autoSync();
   setInterval(autoSync, 5 * 60 * 1000);
 
@@ -1252,12 +1274,81 @@ async function init() {
 }
 
 const isExtension = typeof chrome !== 'undefined' && Boolean(chrome.runtime?.id);
+// Inside the Android app (Capacitor injects its bridge before the page runs).
+const isNativeApp = Boolean(window.androidBridge) || Boolean(window.Capacitor?.isNativePlatform?.());
+
+async function setUpNativeApp() {
+  native = await import('./native.js');
+  native.initNative({
+    importSharedText,
+    showTab,
+    currentTab,
+    switchWallet,
+    getState: () => state,
+    persist: saveStateOnly,
+    reload: async () => {
+      state = await loadState();
+      render();
+    },
+  });
+  bindNotificationSettings();
+}
+
+async function renderNotificationSettings() {
+  if (!native) return;
+  $('#notify-card').hidden = false;
+  const perm = await native.notificationPermission();
+  const set = native.notificationSettings(state);
+  $('#notify-status').innerHTML = perm === 'granted'
+    ? '<span class="badge paid">Notifications allowed</span>'
+    : `<span class="badge overdue">Notifications are off for this app</span> <button id="notify-allow" class="primary">Allow notifications</button>`;
+  const f = $('#notify-form');
+  f.weekly.checked = set.weekly;
+  f.weekday.value = String(set.weekday);
+  f.hour.value = String(set.hour);
+  f.bills.checked = set.bills;
+  f.budget.checked = set.budget;
+}
+
+function bindNotificationSettings() {
+  const f = $('#notify-form');
+  f.hour.innerHTML = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('');
+  f.addEventListener('change', async () => {
+    state.settings.notifications = {
+      weekly: f.weekly.checked,
+      weekday: Number(f.weekday.value),
+      hour: Number(f.hour.value),
+      bills: f.bills.checked,
+      budget: f.budget.checked,
+    };
+    await persist();
+    toast('Notification settings saved');
+  });
+  $('#notify-card').addEventListener('click', async (e) => {
+    if (e.target.id === 'notify-allow') {
+      const result = await native.askNotificationPermission();
+      if (result !== 'granted') toast('Turn notifications on in Android Settings → Apps → M-Pesa Ledger → Notifications');
+      await persist();
+      renderNotificationSettings();
+    }
+    if (e.target.id === 'notify-test') {
+      if ((await native.notificationPermission()) !== 'granted') return toast('Allow notifications first');
+      await native.sendTestNotification();
+      toast('A test notification will appear in a moment');
+    }
+  });
+}
 
 // Text shared from the phone's Messages app arrives as ?text=... (Web Share Target).
 async function importShared(params) {
   const shared = ['title', 'text', 'url'].map((k) => params.get(k) || '').filter(Boolean).join('\n');
   if (!shared) return false;
   history.replaceState(null, '', location.pathname);
+  return importSharedText(shared);
+}
+
+// Shared M-Pesa messages (one or many) from the phone's Messages app.
+async function importSharedText(shared) {
   const { transactions, failed } = parseMessages(shared);
   showTab('import');
   if (!transactions.length) {
@@ -1318,7 +1409,7 @@ async function runInstallChecks() {
   return checks;
 }
 
-export const APP_VERSION = '2026.10.06-1';
+export const APP_VERSION = '2026.10.12-1';
 
 function setUpWebApp() {
   $('#install-card').hidden = false;

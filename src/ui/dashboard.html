@@ -357,6 +357,22 @@
           <div class="table-wrap short"><table class="data compact"><tbody id="cats-body"></tbody></table></div>
         </div>
       </div>
+      <div class="card" id="notify-card" hidden>
+        <h2>Phone notifications</h2>
+        <p class="sub">Reminders from this app. They are worked out on your phone from your bills, budgets and transactions.</p>
+        <div id="notify-status" class="row"></div>
+        <form id="notify-form" class="notify-form">
+          <label class="check"><input type="checkbox" name="weekly"><span>Weekly reminder to import M-Pesa messages, every
+            <select name="weekday" aria-label="Day">
+              <option value="1">Sunday</option><option value="2">Monday</option><option value="3">Tuesday</option><option value="4">Wednesday</option><option value="5">Thursday</option><option value="6">Friday</option><option value="7">Saturday</option>
+            </select>
+            at <select name="hour" aria-label="Time"></select></span>
+          </label>
+          <label class="check"><input type="checkbox" name="bills"><span>Bills: the day before and on the due day, and daily while overdue</span></label>
+          <label class="check"><input type="checkbox" name="budget"><span>Budgets: when a category is almost used up or goes over</span></label>
+        </form>
+        <button type="button" id="notify-test">Send a test notification</button>
+      </div>
       <div class="card" id="install-card" hidden>
         <h2>Install on this phone</h2>
         <p class="sub">App version <strong id="app-version"></strong></p>

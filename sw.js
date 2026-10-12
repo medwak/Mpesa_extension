@@ -1,6 +1,6 @@
 // Service worker for the installable web app (not used by the extension).
 // Caches the app so it opens offline; bump VERSION when files change.
-const VERSION = 'mpesa-ledger-v5';
+const VERSION = 'mpesa-ledger-v6';
 const FILES = [
   './',
   './index.html',
@@ -16,13 +16,16 @@ const FILES = [
   './src/lib/parser.js',
   './src/lib/pdf.js',
   './src/lib/people.js',
+  './src/lib/reminders.js',
   './src/lib/statements.js',
   './src/lib/store.js',
   './src/lib/wallets.js',
   './src/ui/dashboard.css',
   './src/ui/dashboard.html',
   './src/ui/dashboard.js',
+  './src/ui/native.js',
   './src/ui/theme.css',
+  './vendor/capacitor/core.js',
   './vendor/pdfjs/pdf.min.mjs',
   './vendor/pdfjs/pdf.worker.min.mjs',
   './icons/icon192.png',

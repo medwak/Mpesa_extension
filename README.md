@@ -58,6 +58,22 @@ If your phone only offers "Create shortcut" and says the app cannot be installed
 
 The phone app and the desktop extension each keep their own data. Move data between them with **Settings → Download backup** and **Restore backup**.
 
+## Android app (APK)
+
+The `android/` folder wraps the same app as an installable Android app (Capacitor). It adds:
+
+- **Share → M-Pesa Ledger** from the Messages app: select one or many M-Pesa messages, share once, and they are imported and sorted (category, line, business account, person).
+- **Phone notifications:** a weekly reminder to import messages, bill reminders (the day before and on the due day, and daily while overdue), and budget warnings. Set them under **Settings → Phone notifications**.
+- Saving CSV and backup files through Android's Share sheet, and printing or saving statements as PDF through Android's print screen.
+
+**Getting the APK:** every push to GitHub builds it (`.github/workflows/android.yml`) and publishes it on the repository's **Releases** page as *M-Pesa Ledger for Android (latest)*. On your phone, download the `.apk`, open it and allow installing from your browser when Android asks. New versions install over the old one and keep your data.
+
+**Building it yourself** (needs Node 22, JDK 21 and the Android SDK): `npm ci && npm run build:web && npx cap sync android`, then `cd android && ./gradlew assembleRelease`. The APK is in `android/app/build/outputs/apk/release/`.
+
+**Adding native features:** each phone feature talks to one Capacitor plugin from `src/ui/native.js`. Add an official or community plugin with `npm install`, register it there, and run `npx cap sync android`; or write your own plugin in `android/app/src/main/java/com/mpesaledger/app/` like `PrinterPlugin.java`, and register it in `MainActivity.java`.
+
+**Signing:** builds are signed with the key in `android/app/ledger-sideload.keystore` so updates install over each other. It is meant only for sideloading your own copy; before publishing the app anywhere, create a private key and point the `LEDGER_KEYSTORE` and `LEDGER_KEYSTORE_PASSWORD` environment variables at it.
+
 ## Business accounts (your own Till or Paybill)
 
 Open **Settings → Accounts** and add your Till, Paybill or Pochi la Biashara. An account menu then appears at the top of the dashboard; every tab (overview, transactions, statements, bills, budget) shows the selected account only.
@@ -98,6 +114,10 @@ src/lib/daraja.js        Daraja C2B sync with the relay
 relay/                   Cloudflare Worker that receives Daraja payments (see relay/README.md)
 src/lib/store.js         Storage (chrome.storage, localStorage fallback)
 src/ui/                  Popup and dashboard (the dashboard is also the phone app)
+src/ui/native.js         Android app features (notifications, share, files, print)
+src/lib/reminders.js     Which phone notifications to schedule
+android/                 Android app project (Capacitor)
+capacitor.config.json    Android app settings
 manifest.webmanifest     Phone app manifest (install + Share target)
 sw.js                    Phone app offline cache
 index.html               Phone app entry page

@@ -1,0 +1,77 @@
+# Builds the Android app (APK) and publishes it on the repository's Releases
+# page as "M-Pesa Ledger for Android (latest)". GitHub's Ubuntu runners have
+# the Android SDK installed, so nothing else needs setting up.
+name: Android APK
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build the web app and copy it into Android
+        run: |
+          npm run build:web
+          npx cap sync android
+
+      - name: Build signed APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace \
+            -PversionCode=${{ github.run_number }} \
+            -PversionName=1.${{ github.run_number }}
+
+      - name: Name the APK
+        id: apk
+        run: |
+          NAME="mpesa-ledger-1.${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$NAME"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          ls -la "$NAME"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mpesa-ledger-apk
+          path: ${{ steps.apk.outputs.name }}
+
+      - name: Publish on the Releases page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=android-latest
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" "${{ steps.apk.outputs.name }}" \
+            --target "${{ github.sha }}" \
+            --prerelease \
+            --title "M-Pesa Ledger for Android (latest)" \
+            --notes "Version 1.${{ github.run_number }}, built from ${{ github.ref_name }} at ${GITHUB_SHA::7}. On your phone: download the .apk below, open it and allow installing from your browser if Android asks. Newer versions install over this one and keep your data."
