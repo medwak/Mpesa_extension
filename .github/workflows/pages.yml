@@ -1,10 +1,13 @@
-# Publishes the installable phone app to GitHub Pages on every push to main.
+# Publishes the installable phone app to GitHub Pages. Runs only when started
+# by hand (Actions -> Deploy web app to GitHub Pages -> Run workflow), so it
+# does not fail on every push while Pages is switched off.
 # One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
+# To publish automatically on every push to main again, add:
+#   push:
+#     branches: [main]
 name: Deploy web app to GitHub Pages
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
